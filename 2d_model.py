@@ -23,14 +23,14 @@ def yamamura(theta, theta_opt, f):
 class Solver:
     def __init__(self, angle, length, points):
         self.yamp = 0.01
-        self.max_h = 2
-        self.min_h = -2
 
         self.angle = np.radians(angle)
 
         self.length = length
         self.points = points
         self.points_sep = length/float(points-1)
+
+        self.boundary_cond = "0"
 
 
         self.x = np.linspace(0, length, num=points)
@@ -41,25 +41,40 @@ class Solver:
     def align_z(self):
         self.y -= np.average(self.y)
 
-    def random_distortion(self, val):
-        pass
+    def add_normal_noise(self, sigma):
+        normal = np.random.normal(0, sigma, self.points)
+        for i in xrange(self.points):
+            self.y[i] += normal[i]
 
     def sin_distortion(self, amp, period):
         self.y += amp*np.sin(self.x/period)
         self.align_z()
 
-    def show(self):
+    def show(self, yspace=[-2, 2], zoom=None):
+
+        if zoom:
+            zi_start = int(zoom[0]*self.points)
+            zi_end = int(zoom[1]*(self.points-1))
+        else:
+            zi_start = 0
+            zi_end = self.points - 1
+
         fig, ax = plt.subplots()
         plt.subplots_adjust(bottom=0.25)
 
-        plt.axis([0, self.length, self.min_h, self.max_h])
-        l, = plt.plot(self.x, self.y)
+        plt.axis([self.x[zi_start], self.x[zi_end] , yspace[0], yspace[1]])
+        if zoom:
+            l, = plt.plot(self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'r+')
+        else:
+            l, = plt.plot(self.x[zi_start:zi_end], self.y[zi_start:zi_end])
 
         axslider = plt.axes([0.15, 0.1, 0.65, 0.05])
         slider = Slider(axslider, 'Tmp', 0, len(self.frames)-1, valinit=0)
 
         def update(val):
-            l.set_ydata(self.frames[int(val)])
+            sel = self.frames[int(val)][zi_start:zi_end]
+            sel -= np.average(sel)
+            l.set_ydata(sel)
         slider.on_changed(update)
         plt.show()
 
@@ -70,6 +85,7 @@ class Solver:
         angle = self.angle
 
         max_angle = np.pi/2.0 - 0.01
+        pairs = np.empty(self.points-1, dtype=float)
 
         #yamamura(theta, theta_opt, f):
         for i in xrange(self.points-1):
@@ -77,17 +93,17 @@ class Solver:
             fangle = langle + angle
             if fangle > max_angle:
                 fangle = max_angle
-            lyield = yamp*yamamura(fangle, np.radians(67), 1.95)
+            pairs[i] = yamp*yamamura(fangle, np.radians(67), 1.95)
 
+        for i in xrange(self.points-1):
+            y[i] += pairs[i]
+            y[i+1] += pairs[i]
 
-            y[i] += lyield
-            y[i+1] += lyield
+        y[0] += pairs[0]
+        y[-1] += pairs[-1]
 
-        byield = yamp*yamamura(angle, np.radians(67), 1.95)
-        y[0] += byield
-        y[self.points-1] += byield
-
-        self.align_z()
+        # b-condition
+        #self.bcondition()
 
         self.frames.append(np.copy(self.y))
 
@@ -97,9 +113,12 @@ class Solver:
 
 
 
-solver = Solver(67, 100, 1000)
-solver.sin_distortion(1, 15)
-solver.run(500)
+solver = Solver(67, 500, 4000)
+solver.sin_distortion(1, 20)
+solver.add_normal_noise(0.02)
+solver.run(2000)
 solver.show()
+solver.show(zoom=[0,0.1])
+#solver.show(zoom=[0.98,1])
 #solver.show()
 
