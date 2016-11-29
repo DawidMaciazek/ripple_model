@@ -23,8 +23,10 @@ def yamamura(theta, theta_opt, f):
 
 
 class Solver:
-    def __init__(self, angle, length, points):
-        self.yamp = 0.01
+    def __init__(self, angle, length, points, yamp=0.01, d=0.01):
+        self.dist_traveled = 0.0
+        self.d = d
+        self.yamp = yamp
         self.thetao = np.radians(77)
 
         self.angle = np.radians(angle)
@@ -44,7 +46,8 @@ class Solver:
         self.angle_frames = []
 
     def align_z(self):
-        self.y -= np.average(self.y)
+        ave = np.average(self.y)
+        self.y -= ave
 
     def add_normal_noise(self, sigma):
         normal = np.random.normal(0, sigma, self.points)
@@ -59,8 +62,33 @@ class Solver:
     def gauss_distortion(self, amp, mu, sigma):
         self.y += amp*mlab.normpdf(self.x ,mu, sigma)
 
+    def triangle_distortion(self, amp, start, end):
+        start = float(start)
+        end = float(end)
+        amp = float(amp)
+        mid = start + (end - start)/2
+        sel_up = np.logical_and(self.x>start, self.x<=mid)
+        sel_down = np.logical_and(self.x>mid, self.x<end)
+
+        a_up = (amp)/(mid-start)
+        b_up = -start*(amp)/(mid-start)
+
+        a_down = (-amp)/(end-mid)
+        b_down = amp-mid*(-amp)/(end-mid)
+        print "TRIANGLE"
+        print "start:{}, mid:{}, end{}, amp{}".format(start, mid, end, amp)
+        for i, v in enumerate(sel_up):
+            if v:
+                self.y[i] += a_up*self.x[i] + b_up
+
+        for i, v in enumerate(sel_down):
+            if v:
+                self.y[i] += a_down*self.x[i] + b_down
 
     def show(self, yspace=[-2, 2], zoom=None):
+        print "TOTAL DISTANCE TRAVELED:"
+        print np.average(self.y)
+        print "-----------------------"
 
         if zoom:
             zi_start = int(zoom[0]*self.points)
@@ -207,33 +235,139 @@ class Solver:
         self.py_frames.append(partial_yield)
         self.angle_frames.append(angles)
 
+
+    def calc_step_4_p(self):
+        yamp = self.yamp
+        y = self.y
+        d = self.d
+        points_sep = self.points_sep
+        pair_sep = points_sep*2
+        angle = self.angle
+
+        max_angle = np.pi/2.0 - 0.01
+
+        partial_yield = np.empty(self.points, dtype=float)
+        diffusion = np.empty(self.points, dtype=float)
+        angles = np.empty(self.points, dtype=float)
+        coef  = [1.0/12, -2.0/3, 2.0/3, -1.0/12]
+
+        dcoef = [-1.0/12, 4.0/3, -5.0/2.0, 4.0/3, -1.0/12]
+
+        for i in xrange(2, self.points-2):
+            tangle = y[i-2]*coef[0] + y[i-1]*coef[1] + y[i+1]*coef[2] + y[i+2]*coef[3]
+            langle = np.arctan(tangle/pair_sep)
+            fangle =  angle - langle
+            if fangle > max_angle:
+                print "WARNING !:", fangle
+                fangle = max_angle
+                print "result::", yamamura(fangle, self.thetao, 1.95)
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+            angles[i] = fangle
+
+            dangle = y[i-2]*dcoef[0] + y[i-1]*dcoef[1] + y[i]*dcoef[2] + y[i+1]*dcoef[3] + y[i+2]*dcoef[4]
+            diffusion[i] = d*(dangle/(pair_sep*pair_sep))
+
+        bcon = {0:[-2,-1,1,2], 1:[-1,0,2,3],
+                -1:[-3,-2,0,1], -2:[-4,-3, -1, 0]}
+        for i in bcon:
+            ilist = bcon[i]
+            tangle = y[ilist[0]]*coef[0] + y[ilist[1]]*coef[1] + y[ilist[2]]*coef[2] + y[ilist[3]]*coef[3]
+            langle = np.arctan(tangle/pair_sep)
+            fangle = angle - langle
+
+            if fangle > max_angle:
+                print "WARNING !:", fangle
+                fangle = max_angle
+                print "BONDARY RESULT::", yamamura(fangle, self.thetao, 1.95)
+
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+            angles[i] = fangle
+
+            dangle = y[ilist[0]]*dcoef[0] + y[ilist[1]]*dcoef[1] + y[i]*dcoef[2] + y[ilist[2]]*dcoef[3] + y[ilist[3]]*dcoef[4]
+            diffusion[i] = d*(dangle/(pair_sep*pair_sep))
+
+
+
+
+
+
+        for i in xrange(self.points):
+            y[i] -= partial_yield[i]
+            y[i] += diffusion[i]
+
+        self.frames.append(np.copy(self.y))
+        self.py_frames.append(partial_yield)
+        self.angle_frames.append(angles)
+
+    def calc_step_6(self):
+        yamp = self.yamp
+        y = self.y
+        points_sep = self.points_sep
+        pair_sep = points_sep*2
+        angle = self.angle
+
+        max_angle = np.pi/2.0 - 0.01
+
+        partial_yield = np.empty(self.points, dtype=float)
+        angles = np.empty(self.points, dtype=float)
+        coef = [-1.0/60, 3.0/20, -3.0/4, 3.0/4,  -3.0/20, 1.0/60]
+
+        for i in xrange(3, self.points-3):
+            tangle = y[i-3]*coef[0] + y[i-2]*coef[1] + y[i-1]*coef[2] + y[i+1]*coef[3] + y[i+2]*coef[4] + y[i+3]*coef[5]
+            langle = np.arctan(tangle/pair_sep)
+            fangle =  angle - langle
+            if fangle > max_angle:
+                print "WARNING !:", fangle
+                fangle = max_angle
+                print "result::", yamamura(fangle, self.thetao, 1.95)
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+            angles[i] = fangle
+
+        angles[0] = angles[1] = angles[2]  = angles[3]
+        angles[-1] = angles[-2] = angles[-3]  = angles[-4]
+
+
+        for i in xrange(self.points):
+            y[i] -= partial_yield[i]
+        y[0] = y[1] = y[2] = y[3]
+        y[-1]=y[-2] = y[-3] = y[4]
+
+        self.frames.append(np.copy(self.y))
+        self.py_frames.append(partial_yield)
+        self.angle_frames.append(angles)
+
     def run(self, num=100, mode=0):
         for i in xrange(num):
             if mode == 0:
                 self.calc_step()
             elif mode == 1:
                 self.calc_step_4()
+            elif mode == 2:
+                self.calc_step_6()
+            elif mode == 3:
+                self.calc_step_4_p()
             else:
                 self.calc_step_ave()
 
 
 
-solver = Solver(67, 500, 2000)
+solver = Solver(67, 500, 200, yamp=0.012, d=0.0035)
 #solver.sin_distortion(1, 20)
-solver.gauss_distortion(100, 250, 20)
-solver.add_normal_noise(0.001)
-solver.run(500, 2)
-solver.show()
-solver.show(zoom=[0.5,0.6])
-#solver.show(zoom=[0.08,0.1])
-#solver.show(zoom=[0.1,0.3])
-#solver.show(zoom=[0.8,1])
-#solver.show(zoom=[0.98,1])
-#solver.show()
+solver.gauss_distortion(25, 365, 25)
 
-x = np.linspace(0,np.pi*0.499 , num=100)
-y = yamamura(x, np.radians(77), 1.94)
+solver.triangle_distortion(1, 200, 400)
+solver.gauss_distortion(-50, 400, 15)
+solver.gauss_distortion(-50, 50, 15)
+solver.gauss_distortion(50, 150, 15)
+solver.add_normal_noise(0.01)
 
-#plt.plot(x, y)
-#plt.show()
+c = 10000
+while c!=0:
+    solver.run(c, 3)
+    solver.show()
+    c = input("continue :")
+
+
+
+#solver.show(zoom=[0.3,0.7])
 
