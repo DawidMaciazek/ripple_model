@@ -129,6 +129,7 @@ class Solver:
             if center:
                 sel -= np.average(sel)
             l.set_ydata(sel)
+
             if(False):
                 sel_y = self.py_frames[int(val)][zi_start:zi_end]/(max(self.py_frames[int(val)][zi_start:zi_end]))
                 sel_y -= np.average(sel_y)
@@ -157,64 +158,82 @@ class Solver:
         points_sep = self.points_sep
         angle = self.angle
 
-        max_angle = np.pi/2.0 - 0.01
-        pairs = np.empty(self.points-1, dtype=float)
+        max_angle = np.pi/2.0 - 0.001
+        pairs = np.empty(self.points, dtype=float)
+        angles = np.empty(self.points, dtype=float)
 
-        #yamamura(theta, theta_opt, f):
         for i in xrange(self.points-1):
             langle = np.arctan((y[i+1]-y[i])/points_sep)
-            fangle = langle + angle
+            fangle = -langle + angle
+
             if fangle > max_angle:
                 print "over max:", fangle * 57.3
-                print "result::", yamamura(fangle, self.thetao, 1.95)
-                fangle = max_angle
+                fangle = max_angle - 0.1
             pairs[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+            angles[i] = fangle
+
+        langle = np.arctan((y[0]-y[-1])/points_sep)
+        fangle = -langle + angle
+        pairs[-1] = yamp*yamamura(fangle, self.thetao, 1.95)
 
         for i in xrange(self.points-1):
-            y[i] += pairs[i]
-            y[i+1] += pairs[i]
+            y[i] -= pairs[i]*0.5
+            y[i+1] -= pairs[i]*0.5
+        y[0] -= pairs[-1]*0.5
+        y[-1] -= pairs[-1]*0.5
 
-        y[0] += pairs[0]
-        y[-1] += pairs[-1]
+
 
         self.frames.append(np.copy(self.y))
+        self.angle_frames.append(angles)
+        self.py_frames.append(pairs)
+
 
     def calc_step_ave(self):
         yamp = self.yamp
         y = self.y
         points_sep = self.points_sep
-        pair_sep = points_sep*2
         angle = self.angle
 
-        max_angle = np.pi/2.0 - 0.01
-
-        partial_yield = np.empty(self.points, dtype=float)
+        max_angle = np.pi/2.0 - 0.001
+        pairs = np.empty(self.points, dtype=float)
         angles = np.empty(self.points, dtype=float)
 
-        for i in xrange(1, self.points-1):
-            langle = np.arctan((y[i+1]-y[i-1])/(2*pair_sep))
+        normal = np.random.normal(1, 0.0004, self.points)
+        for i in xrange(self.points-1):
+            langle = np.arctan((y[i+1]-y[i])/points_sep)
             fangle = -langle + angle
+
             if fangle > max_angle:
-                print "WARNING !:", fangle
-                fangle = max_angle
-                print "result::", yamamura(fangle, self.thetao, 1.95)
-            partial_yield[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+                print "over max:", fangle * 57.3
+                fangle = max_angle - 0.1
+            pairs[i] = normal[i]*yamp*yamamura(fangle, self.thetao, 1.95)
             angles[i] = fangle
 
-        langle = np.arctan(2*((y[1]-y[0])/pair_sep))
-        partial_yield[0] = yamp*yamamura(langle + angle, self.thetao, 1.95)
-        angles[0] = -langle + angle
+        langle = np.arctan((y[0]-y[-1])/points_sep)
+        fangle = -langle + angle
+        pairs[-1] = yamp*yamamura(fangle, self.thetao, 1.95)*normal[i]
 
-        langle = np.arctan(2*((y[-1]-y[-2])/pair_sep))
-        partial_yield[-1] = yamp*yamamura(langle + angle, self.thetao, 1.95)
-        angles[-1] = -langle + angle
+        #w = [0.15, 0.35, 0.35, 0.15]
+        #w = [0.1, 0.3, 0.4, 0.20]
+        #w = [0.05, 0.1, 0.25, 0.3, 0.2, 0.1]
+        w = [0.05, 0.15, 0.3, 0.3, 0.15, 0.05]
+        for i in range(-3, len(pairs)-3):
+            p = pairs[i]
+            y[i-2] -= w[0]*p
+            y[i-1] -= w[1]*p
+            y[i] -= w[2]*p
+            y[i+1] -= w[3]*p
+            y[i+2] -= w[4]*p
+            y[i+3] -= w[5]*p
 
-        for i in xrange(self.points):
-            y[i] -= partial_yield[i]
+
+
+
 
         self.frames.append(np.copy(self.y))
-        self.py_frames.append(partial_yield)
         self.angle_frames.append(angles)
+        self.py_frames.append(pairs)
 
     def calc_step_4(self):
         yamp = self.yamp
@@ -546,39 +565,47 @@ class Solver:
                 self.calc_step_f3_p()
             elif mode == 6:
                 self.calc_leap_frog_MIX_p()
+            elif mode == 7:
+                self.calc_step_ave()
             else:
                 self.calc_step_ave()
 
 
 
-solver = Solver(76, 100, 500, yamp=0.002, d=0.00000)
+solver = Solver(65, 100, 500, yamp=0.005, d=0.00000)
 #solver.sin_distortion(0.1, 3)
-solver.gauss_distortion(4, 30, 10)
-solver.gauss_distortion(4, 70, 10)
-solver.add_normal_noise(0.001)
-solver.zigzag_distortion(0.01)
+solver.gauss_distortion(2, 40, 10)
+solver.gauss_distortion(-3, 60, 10)
+#solver.add_normal_noise(0.003)
+#solver.zigzag_distortion(0.01)
 #solver.sin_distortion(0.8, 2)
 #solver.sin_distortion(2, 2)
-#solver.triangle_distortion(0.91, 10,30)
+#solver.triangle_distortion(0.6, 10,20)
 #solver.triangle_distortion(-1, 60,92)
 #solver.triangle_distortion(1, 50, 85)
 
+#solver.triangle_distortion(0.02, 10,11)
+#solver.triangle_distortion(0.02, 30,31)
+#solver.triangle_distortion(0.02, 70,71)
 #solver.zigzag_distortion(0.01)
 
-c = 10
+c = 2000
 while c!=0:
-    solver.run(c, 6)
+    #solver.run(c, 4)
+    solver.run(c, 7)
     solver.show(yspace=[-1.2, 1.2])
-    solver.show(yspace=[-0.5, 0.2], zoom=[0.45,0.50])
+    solver.show(yspace=[-0.5, 0.2], zoom=[0.3,0.6])
     c = input("continue :")
 
 
 
 #solver.show(zoom=[0.3,0.7])
 if False:
-    x = np.linspace(0.2, 89.8, 100)
-    y = np.array([ yamamura(np.radians(i), np.radians(77), 1.95) for i in x ])
+    x = np.linspace(0.1, 6, 100)
+    #y = np.array([ np.arctan(i) for i in x ])
+    y = np.array([ yamamura(np.arctan(i), np.radians(77), 1.95) for i in x ])
     plt.plot(x, y)
     plt.show()
+
 
 
