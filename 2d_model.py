@@ -114,10 +114,11 @@ class Solver:
         ll = None
         lll = None
         if zoom:
-            l, ll, yl, lll = plt.plot(self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'r+',
+            l, ll, yl, lll, lyield = plt.plot(self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'r+',
                                   self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'b-',
                                   self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'y-',
-                                  self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'g.')
+                                  self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'g.',
+                                  self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'm.')
         else:
             l, = plt.plot(self.x[zi_start:zi_end], self.y[zi_start:zi_end])
 
@@ -139,6 +140,10 @@ class Solver:
                 a = 2*np.abs(yspace[0])/np.pi
                 sel_a = self.angle_frames[int(val)][zi_start:zi_end]*a+yspace[0]
                 lll.set_ydata(sel_a)
+
+                sel_yield = yamamura(self.angle_frames[int(val)][zi_start:zi_end], self.thetao, 1.95) * (yspace[1]/5.0)
+                lyield.set_ydata(sel_yield)
+
 
                 b = np.radians(77.0)*a + yspace[0]
                 sel_b = np.full(len(sel_a), b)
@@ -279,7 +284,7 @@ class Solver:
         y = self.y
         d = self.d
         points_sep = self.points_sep
-        pair_sep = points_sep*2
+        pair_sep = points_sep
         angle = self.angle
 
         max_angle = np.pi/2.0 - 0.01
@@ -572,29 +577,29 @@ class Solver:
 
 
 
-solver = Solver(65, 100, 500, yamp=0.005, d=0.00000)
-#solver.sin_distortion(0.1, 3)
-solver.gauss_distortion(2, 40, 10)
-solver.gauss_distortion(-3, 60, 10)
-#solver.add_normal_noise(0.003)
-#solver.zigzag_distortion(0.01)
-#solver.sin_distortion(0.8, 2)
-#solver.sin_distortion(2, 2)
-#solver.triangle_distortion(0.6, 10,20)
-#solver.triangle_distortion(-1, 60,92)
-#solver.triangle_distortion(1, 50, 85)
-
-#solver.triangle_distortion(0.02, 10,11)
-#solver.triangle_distortion(0.02, 30,31)
-#solver.triangle_distortion(0.02, 70,71)
+#solver = Solver(45, 100, 500, yamp=0.001, d=0.00002)
+solver = Solver(67, 100, 500, yamp=0.0005, d=0.00000)
+solver.sin_distortion(0.5, 5)
+solver.sin_distortion(0.04, 10)
+solver.sin_distortion(0.02, 12)
+#solver.gauss_distortion(5, 40, 2)
+#solver.gauss_distortion(-3, 60, 10)
+#solver.add_normal_noise(0.0003)
 #solver.zigzag_distortion(0.01)
 
-c = 2000
+import random
+random.seed(101)
+for i in random.sample(range(15,87),23):
+    solver.gauss_distortion(0.2, i, 6)
+
+#solver.add_normal_noise(0.0010)
+
+c = 20
 while c!=0:
-    #solver.run(c, 4)
-    solver.run(c, 7)
-    solver.show(yspace=[-1.2, 1.2])
-    solver.show(yspace=[-0.5, 0.2], zoom=[0.3,0.6])
+    #solver.run(c, 3)
+    solver.run(c, 0)
+    solver.show(yspace=[-2.2, 2.2])
+    solver.show(yspace=[-2.0, 2.0], zoom=[0.1,0.9])
     c = input("continue :")
 
 
