@@ -23,11 +23,12 @@ def yamamura(theta, theta_opt, f):
 
 
 class Solver:
-    def __init__(self, angle, length, points, yamp=0.01, d=0.01):
+    def __init__(self, angle, length, points, yamp=0.01, d=0.01, fval=2.4, thetao=72.7):
+        self.fval = fval
         self.dist_traveled = 0.0
         self.d = d
         self.yamp = yamp
-        self.thetao = np.radians(77)
+        self.thetao = np.radians(thetao)
 
         self.angle = np.radians(angle)
 
@@ -114,10 +115,12 @@ class Solver:
         ll = None
         lll = None
         if zoom:
-            l, ll, yl, lll, lyield = plt.plot(self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'r+',
+            l, lrc, ll, yl, lll, aplhha, lyield = plt.plot(self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'r',
+                                  self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'r+',
                                   self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'b-',
                                   self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'y-',
                                   self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'g.',
+                                  self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'g+',
                                   self.x[zi_start:zi_end], self.y[zi_start:zi_end], 'm.')
         else:
             l, = plt.plot(self.x[zi_start:zi_end], self.y[zi_start:zi_end])
@@ -130,6 +133,7 @@ class Solver:
             if center:
                 sel -= np.average(sel)
             l.set_ydata(sel)
+            lrc.set_ydata(sel)
 
             if(False):
                 sel_y = self.py_frames[int(val)][zi_start:zi_end]/(max(self.py_frames[int(val)][zi_start:zi_end]))
@@ -137,11 +141,13 @@ class Solver:
                 ll.set_ydata(sel_y)
 
             if(lll):
-                a = 2*np.abs(yspace[0])/np.pi
-                sel_a = self.angle_frames[int(val)][zi_start:zi_end]*a+yspace[0]
+                a = (4)*2*np.abs(yspace[0])/np.pi
+                sel_a = self.angle_frames[int(val)][zi_start:zi_end]*a+yspace[0]*4
                 lll.set_ydata(sel_a)
+                sel_apha = (self.angle-self.angle_frames[int(val)][zi_start:zi_end])*a
+                aplhha.set_ydata(sel_apha)
 
-                sel_yield = yamamura(self.angle_frames[int(val)][zi_start:zi_end], self.thetao, 1.95) * (yspace[1]/5.0)
+                sel_yield = yamamura(self.angle_frames[int(val)][zi_start:zi_end], self.thetao, self.fval) * (yspace[1]/5.0)
                 lyield.set_ydata(sel_yield)
 
 
@@ -174,12 +180,12 @@ class Solver:
             if fangle > max_angle:
                 print "over max:", fangle * 57.3
                 fangle = max_angle - 0.1
-            pairs[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+            pairs[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
         langle = np.arctan((y[0]-y[-1])/points_sep)
         fangle = -langle + angle
-        pairs[-1] = yamp*yamamura(fangle, self.thetao, 1.95)
+        pairs[-1] = yamp*yamamura(fangle, self.thetao, self.fval)
 
         for i in xrange(self.points-1):
             y[i] -= pairs[i]*0.5
@@ -212,12 +218,12 @@ class Solver:
             if fangle > max_angle:
                 print "over max:", fangle * 57.3
                 fangle = max_angle - 0.1
-            pairs[i] = normal[i]*yamp*yamamura(fangle, self.thetao, 1.95)
+            pairs[i] = normal[i]*yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
         langle = np.arctan((y[0]-y[-1])/points_sep)
         fangle = -langle + angle
-        pairs[-1] = yamp*yamamura(fangle, self.thetao, 1.95)*normal[i]
+        pairs[-1] = yamp*yamamura(fangle, self.thetao, self.fval)*normal[i]
 
         #w = [0.15, 0.35, 0.35, 0.15]
         #w = [0.1, 0.3, 0.4, 0.20]
@@ -260,8 +266,8 @@ class Solver:
             if fangle > max_angle:
                 print "WARNING !:", fangle
                 fangle = max_angle
-                print "result::", yamamura(fangle, self.thetao, 1.95)
-            partial_yield[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+                print "result::", yamamura(fangle, self.thetao, self.fval)
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
         angles[0] = angles[2]
@@ -303,8 +309,8 @@ class Solver:
             if fangle > max_angle:
                 print "WARNING !:", fangle
                 fangle = max_angle
-                print "result::", yamamura(fangle, self.thetao, 1.95)
-            partial_yield[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+                print "result::", yamamura(fangle, self.thetao, self.fval)
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
             dangle = y[i-2]*dcoef[0] + y[i-1]*dcoef[1] + y[i]*dcoef[2] + y[i+1]*dcoef[3] + y[i+2]*dcoef[4]
@@ -321,9 +327,9 @@ class Solver:
             if fangle > max_angle:
                 print "WARNING !:", fangle
                 fangle = max_angle
-                print "BONDARY RESULT::", yamamura(fangle, self.thetao, 1.95)
+                print "BONDARY RESULT::", yamamura(fangle, self.thetao, self.fval)
 
-            partial_yield[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
             dangle = y[ilist[0]]*dcoef[0] + y[ilist[1]]*dcoef[1] + y[i]*dcoef[2] + y[ilist[2]]*dcoef[3] + y[ilist[3]]*dcoef[4]
@@ -357,8 +363,8 @@ class Solver:
             if fangle > max_angle:
                 print "WARNING !:", fangle
                 fangle = max_angle
-                print "result::", yamamura(fangle, self.thetao, 1.95)
-            partial_yield[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+                print "result::", yamamura(fangle, self.thetao, self.fval)
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
         angles[0] = angles[1] = angles[2]  = angles[3]
@@ -394,8 +400,8 @@ class Solver:
             if fangle > max_angle:
                 print "WARNING !:", fangle
                 fangle = max_angle
-                print "result::", yamamura(fangle, self.thetao, 1.95)
-            partial_yield[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+                print "result::", yamamura(fangle, self.thetao, self.fval)
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
             diffusion[i] = 0
@@ -427,12 +433,14 @@ class Solver:
         partial_yield = np.empty(self.points, dtype=float)
         diffusion = np.empty(self.points, dtype=float)
         angles = np.empty(self.points, dtype=float)
-        coef  = [1.0/12, -2.0/3, 2.0/3, -1.0/12] # coef prime
+        coef  = [1.0/12, -2.0/3, 0.0, 2.0/3, -1.0/12] # coef prime
+        #coef  = [0.0, 0.0, -1.0, 1.0, 0.0] # coef prime
+        #coef  = [0.0, -1.0, 1.0, 0.0, 0.0] # coef prime
 
         dcoef = [-1.0/12, 4.0/3, -5.0/2.0, 4.0/3, -1.0/12]
         wflag = False
         for i in xrange(2, self.points-2):
-            tangle = y[i-2]*coef[0] + y[i-1]*coef[1] + y[i+1]*coef[2] + y[i+2]*coef[3]
+            tangle = y[i-2]*coef[0] + y[i-1]*coef[1] + y[i]*coef[2] + y[i+1]*coef[3] + y[i+2]*coef[4]
             langle = np.arctan(tangle/points_sep)
             fangle =  angle - langle
             if fangle > max_angle:
@@ -440,17 +448,17 @@ class Solver:
                 print "F!"
                 wflag = True
 
-            partial_yield[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
             dangle = y[i-2]*dcoef[0] + y[i-1]*dcoef[1] + y[i]*dcoef[2] + y[i+1]*dcoef[3] + y[i+2]*dcoef[4]
             diffusion[i] = d*(dangle/(pair_sep*pair_sep))
 
-        bcon = {0:[-2,-1,1,2], 1:[-1,0,2,3],
-                -1:[-3,-2,0,1], -2:[-4,-3, -1, 0]}
+        bcon = {0:[-2,-1,0,1,2], 1:[-1,0,1,2,3],
+                -1:[-3,-2,-1,0,1], -2:[-4,-3,-2, -1, 0]}
         for i in bcon:
             ilist = bcon[i]
-            tangle = y[ilist[0]]*coef[0] + y[ilist[1]]*coef[1] + y[ilist[2]]*coef[2] + y[ilist[3]]*coef[3]
+            tangle = y[ilist[0]]*coef[0] + y[ilist[1]]*coef[1] + y[ilist[2]]*coef[2] + y[ilist[3]]*coef[3] + y[ilist[4]]*coef[4]
             langle = np.arctan(tangle/points_sep)
             fangle = angle - langle
 
@@ -458,7 +466,7 @@ class Solver:
                 fangle = max_angle - 0.5
                 wflag = True
 
-            partial_yield[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
             dangle = y[ilist[0]]*dcoef[0] + y[ilist[1]]*dcoef[1] + y[i]*dcoef[2] + y[ilist[2]]*dcoef[3] + y[ilist[3]]*dcoef[4]
@@ -515,7 +523,7 @@ class Solver:
                 print "F!"
                 wflag = True
 
-            partial_yield[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
             dangle = y[i-2]*dcoef[0] + y[i-1]*dcoef[1] + y[i]*dcoef[2] + y[i+1]*dcoef[3] + y[i+2]*dcoef[4]
@@ -533,7 +541,7 @@ class Solver:
                 fangle = max_angle - 0.5
                 wflag = True
 
-            partial_yield[i] = yamp*yamamura(fangle, self.thetao, 1.95)
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
             dangle = y[ilist[0]]*dcoef[0] + y[ilist[1]]*dcoef[1] + y[i]*dcoef[2] + y[ilist[2]]*dcoef[3] + y[ilist[3]]*dcoef[4]
@@ -578,37 +586,41 @@ class Solver:
 
 
 #solver = Solver(45, 100, 500, yamp=0.001, d=0.00002)
-solver = Solver(67, 100, 500, yamp=0.0005, d=0.00000)
-solver.sin_distortion(0.5, 5)
-solver.sin_distortion(0.04, 10)
-solver.sin_distortion(0.02, 12)
-#solver.gauss_distortion(5, 40, 2)
+solver = Solver(67, 30, 500, yamp=0.0001, d=0.00001, fval=2.4)
+#solver.sin_distortion(1.4, 2)
+#solver.sin_distortion(0.04, 10)
+#solver.sin_distortion(0.02, 12)
+solver.gauss_distortion(6.4, 15, 2)
 #solver.gauss_distortion(-3, 60, 10)
 #solver.add_normal_noise(0.0003)
 #solver.zigzag_distortion(0.01)
 
-import random
-random.seed(101)
-for i in random.sample(range(15,87),23):
-    solver.gauss_distortion(0.2, i, 6)
+#import random
+#random.seed(101)
+#for i in random.sample(range(15,87),23):
+#    solver.gauss_distortion(0.2, i, 6)
 
 #solver.add_normal_noise(0.0010)
 
 c = 20
 while c!=0:
-    #solver.run(c, 3)
-    solver.run(c, 0)
+    solver.run(c, 3)
+    #solver.run(c, 4)
     solver.show(yspace=[-2.2, 2.2])
-    solver.show(yspace=[-2.0, 2.0], zoom=[0.1,0.9])
+    solver.show(yspace=[-1.5, 1.5], zoom=[0.1,0.9])
+    solver.show(yspace=[-0.1, 0.1], zoom=[0.53,0.562])
+    #solver.show(yspace=[-0.10, 0.25], zoom=[0.555,0.58])
     c = input("continue :")
 
 
 
 #solver.show(zoom=[0.3,0.7])
 if False:
-    x = np.linspace(0.1, 6, 100)
+    x = np.linspace(0.1, np.pi/2.0-0.02, 100)
+    #x = np.linspace(0.1, 6, 100)
     #y = np.array([ np.arctan(i) for i in x ])
-    y = np.array([ yamamura(np.arctan(i), np.radians(77), 1.95) for i in x ])
+    y = np.array(yamamura(x, np.radians(72.7), 2.4))
+    #y = np.array([ yamamura(np.arctan(i), np.radians(77), self.fval) for i in x ])
     plt.plot(x, y)
     plt.show()
 
