@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import matplotlib.mlab as mlab
 import math
 from matplotlib.widgets import Slider
+import random
 
 import sys
 import numpy as np
@@ -133,7 +134,6 @@ class Solver:
             if center:
                 sel -= np.average(sel)
             l.set_ydata(sel)
-            lrc.set_ydata(sel)
 
             if(False):
                 sel_y = self.py_frames[int(val)][zi_start:zi_end]/(max(self.py_frames[int(val)][zi_start:zi_end]))
@@ -141,8 +141,9 @@ class Solver:
                 ll.set_ydata(sel_y)
 
             if(lll):
-                a = (4)*2*np.abs(yspace[0])/np.pi
-                sel_a = self.angle_frames[int(val)][zi_start:zi_end]*a+yspace[0]*4
+                lrc.set_ydata(sel)
+                a = (1)*2*np.abs(yspace[0])/np.pi
+                sel_a = self.angle_frames[int(val)][zi_start:zi_end]*a+yspace[0]*1
                 lll.set_ydata(sel_a)
                 sel_apha = (self.angle-self.angle_frames[int(val)][zi_start:zi_end])*a
                 aplhha.set_ydata(sel_apha)
@@ -151,11 +152,11 @@ class Solver:
                 lyield.set_ydata(sel_yield)
 
 
-                b = np.radians(77.0)*a + yspace[0]
+                b = np.radians(72.7)*a + yspace[0]
                 sel_b = np.full(len(sel_a), b)
                 ll.set_ydata(sel_b)
 
-                c = np.radians(67.0)*a + yspace[0]
+                c = np.radians(45.0)*a + yspace[0]
                 sel_c = np.full(len(sel_a), c)
                 yl.set_ydata(sel_c)
 
@@ -337,6 +338,77 @@ class Solver:
 
         for i in xrange(self.points):
             y[i] -= partial_yield[i]
+            y[i] += diffusion[i]
+
+        self.frames.append(np.copy(self.y))
+        self.py_frames.append(partial_yield)
+        self.angle_frames.append(angles)
+
+    def calc_step_4_p_gauss(self):
+        yamp = self.yamp
+        y = self.y
+        d = self.d
+        points_sep = self.points_sep
+        pair_sep = points_sep
+        angle = self.angle
+
+        max_angle = np.pi/2.0 - 0.01
+
+        partial_yield = np.empty(self.points, dtype=float)
+        diffusion = np.empty(self.points, dtype=float)
+        angles = np.empty(self.points, dtype=float)
+        coef  = [1.0/12, -2.0/3, 2.0/3, -1.0/12]
+
+        dcoef = [-1.0/12, 4.0/3, -5.0/2.0, 4.0/3, -1.0/12]
+
+        for i in xrange(2, self.points-2):
+            tangle = y[i-2]*coef[0] + y[i-1]*coef[1] + y[i+1]*coef[2] + y[i+2]*coef[3]
+            langle = np.arctan(tangle/pair_sep)
+            fangle =  angle - langle
+            if fangle > max_angle:
+                print "WARNING !:", fangle
+                fangle = max_angle
+                print "result::", yamamura(fangle, self.thetao, self.fval)
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
+            angles[i] = fangle
+
+            dangle = y[i-2]*dcoef[0] + y[i-1]*dcoef[1] + y[i]*dcoef[2] + y[i+1]*dcoef[3] + y[i+2]*dcoef[4]
+            diffusion[i] = d*(dangle/(pair_sep*pair_sep))
+
+        bcon = {0:[-2,-1,1,2], 1:[-1,0,2,3],
+                -1:[-3,-2,0,1], -2:[-4,-3, -1, 0]}
+        for i in bcon:
+            ilist = bcon[i]
+            tangle = y[ilist[0]]*coef[0] + y[ilist[1]]*coef[1] + y[ilist[2]]*coef[2] + y[ilist[3]]*coef[3]
+            langle = np.arctan(tangle/pair_sep)
+            fangle = angle - langle
+
+            if fangle > max_angle:
+                print "WARNING !:", fangle
+                fangle = max_angle
+                print "BONDARY RESULT::", yamamura(fangle, self.thetao, self.fval)
+
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
+            angles[i] = fangle
+
+            dangle = y[ilist[0]]*dcoef[0] + y[ilist[1]]*dcoef[1] + y[i]*dcoef[2] + y[ilist[2]]*dcoef[3] + y[ilist[3]]*dcoef[4]
+            diffusion[i] = d*(dangle/(pair_sep*pair_sep))
+
+        hit_id = random.randint(0, self.points-1)
+        gauss_hit = np.zeros(self.points, dtype=float)
+
+        gauss_fun = 20*mlab.normpdf(self.x[int(self.points*0.3):int(self.points*0.7)], 50, 2)
+
+        #def gauss_distortion(self, amp, mu, sigma):
+        #solver.gauss_distortion(22.4, 50, 5)
+        #amp*mlab.normpdf(self.x ,mu, sigma)
+
+        for i in xrange(len(gauss_fun)):
+            gauss_hit[hit_id-i] += gauss_fun[i]
+
+
+        for i in xrange(self.points):
+            y[i] -= partial_yield[i] * gauss_hit[i]
             y[i] += diffusion[i]
 
         self.frames.append(np.copy(self.y))
@@ -580,17 +652,22 @@ class Solver:
                 self.calc_leap_frog_MIX_p()
             elif mode == 7:
                 self.calc_step_ave()
+            elif mode == 8:
+                self.calc_step_4_p_gauss()
             else:
                 self.calc_step_ave()
 
 
 
-#solver = Solver(45, 100, 500, yamp=0.001, d=0.00002)
-solver = Solver(67, 30, 500, yamp=0.0001, d=0.00001, fval=2.4)
-#solver.sin_distortion(1.4, 2)
+#x, np.radians(4.7), 3.01)
+#solver = Solver(70, 100, 500, yamp=0.001, d=0.00000, fval=3.0, thetao=5)
+solver = Solver(45, 100, 500, yamp=0.001, d=0.00009, fval=2.4)
+#solver.sin_distortion(1.5, 2)
 #solver.sin_distortion(0.04, 10)
-#solver.sin_distortion(0.02, 12)
-solver.gauss_distortion(6.4, 15, 2)
+#solver.sin_distortion(0.05, 12)
+#solver.sin_distortion(0.20, 3)
+#solver.sin_distortion(0.12, 7)
+#solver.gauss_distortion(22.4, 50, 5)
 #solver.gauss_distortion(-3, 60, 10)
 #solver.add_normal_noise(0.0003)
 #solver.zigzag_distortion(0.01)
@@ -602,13 +679,13 @@ solver.gauss_distortion(6.4, 15, 2)
 
 #solver.add_normal_noise(0.0010)
 
-c = 20
+c = 10
 while c!=0:
-    solver.run(c, 3)
+    solver.run(c, 8)
     #solver.run(c, 4)
     solver.show(yspace=[-2.2, 2.2])
-    solver.show(yspace=[-1.5, 1.5], zoom=[0.1,0.9])
-    solver.show(yspace=[-0.1, 0.1], zoom=[0.53,0.562])
+    solver.show(yspace=[-2.0, 2.0], zoom=[0.0,1.0])
+    #solver.show(yspace=[-0.1, 0.1], zoom=[0.53,0.562])
     #solver.show(yspace=[-0.10, 0.25], zoom=[0.555,0.58])
     c = input("continue :")
 
@@ -619,9 +696,9 @@ if False:
     x = np.linspace(0.1, np.pi/2.0-0.02, 100)
     #x = np.linspace(0.1, 6, 100)
     #y = np.array([ np.arctan(i) for i in x ])
-    y = np.array(yamamura(x, np.radians(72.7), 2.4))
+    y = np.array(yamamura(x, np.radians(4.7), 3.01))
     #y = np.array([ yamamura(np.arctan(i), np.radians(77), self.fval) for i in x ])
-    plt.plot(x, y)
+    plt.plot(x*57.3, y)
     plt.show()
 
 
