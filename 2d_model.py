@@ -7,6 +7,7 @@ import random
 import sys
 import numpy as np
 
+GLOBAL_COEFF=-10.0
 np.seterr(all='warn')
 
 import warnings
@@ -311,10 +312,12 @@ class Solver:
                 print "WARNING !:", fangle
                 fangle = max_angle
                 print "result::", yamamura(fangle, self.thetao, self.fval)
-            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
+            dangle = y[i-2]*dcoef[0] + y[i-1]*dcoef[1] + y[i]*dcoef[2] + y[i+1]*dcoef[3] + y[i+2]*dcoef[4]
+            if i == 10:
+                print np.exp(GLOBAL_COEFF*dangle)
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)*np.exp(GLOBAL_COEFF*dangle)
             angles[i] = fangle
 
-            dangle = y[i-2]*dcoef[0] + y[i-1]*dcoef[1] + y[i]*dcoef[2] + y[i+1]*dcoef[3] + y[i+2]*dcoef[4]
             diffusion[i] = d*(dangle/(pair_sep*pair_sep))
 
         bcon = {0:[-2,-1,1,2], 1:[-1,0,2,3],
@@ -330,10 +333,11 @@ class Solver:
                 fangle = max_angle
                 print "BONDARY RESULT::", yamamura(fangle, self.thetao, self.fval)
 
-            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
+            dangle = y[ilist[0]]*dcoef[0] + y[ilist[1]]*dcoef[1] + y[i]*dcoef[2] + y[ilist[2]]*dcoef[3] + y[ilist[3]]*dcoef[4]
+            partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)*np.exp(GLOBAL_COEFF*dangle)
+
             angles[i] = fangle
 
-            dangle = y[ilist[0]]*dcoef[0] + y[ilist[1]]*dcoef[1] + y[i]*dcoef[2] + y[ilist[2]]*dcoef[3] + y[ilist[3]]*dcoef[4]
             diffusion[i] = d*(dangle/(pair_sep*pair_sep))
 
         for i in xrange(self.points):
@@ -660,9 +664,9 @@ class Solver:
 
 
 #x, np.radians(4.7), 3.01)
-#solver = Solver(70, 100, 500, yamp=0.001, d=0.00000, fval=3.0, thetao=5)
-solver = Solver(45, 100, 500, yamp=0.001, d=0.00009, fval=2.4)
-#solver.sin_distortion(1.5, 2)
+solver = Solver(60, 100, 500, yamp=0.01, d=0.00000, fval=3.0)
+#solver = Solver(45, 100, 500, yamp=0.001, d=0.00009, fval=2.4)
+solver.sin_distortion(1.5, 2)
 #solver.sin_distortion(0.04, 10)
 #solver.sin_distortion(0.05, 12)
 #solver.sin_distortion(0.20, 3)
@@ -681,8 +685,8 @@ solver = Solver(45, 100, 500, yamp=0.001, d=0.00009, fval=2.4)
 
 c = 10
 while c!=0:
-    solver.run(c, 8)
-    #solver.run(c, 4)
+    #solver.run(c, 8)
+    solver.run(c, 4)
     solver.show(yspace=[-2.2, 2.2])
     solver.show(yspace=[-2.0, 2.0], zoom=[0.0,1.0])
     #solver.show(yspace=[-0.1, 0.1], zoom=[0.53,0.562])
