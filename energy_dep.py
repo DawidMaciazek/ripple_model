@@ -66,6 +66,14 @@ class EnergyDepositionModel:
             -np.power((self.x_n[:self.ion_range_nodes]-self.gshift_n)*(1.0/np.sin(self.theta)), 2)
             /(2.0*np.power(self.gsigma_n, 2))))
 
+        # surface small RMS:
+        self.rms  = kwargs.get("rms", 5) # A
+        self.rms_n = self.rms*self.dist_scale # dist*
+        self.rms_cut = kwargs.get("rmscut", 0.05)
+        self.rms_slope = -np.log(self.rms_cut/(1-self.rms_cut))/self.rms_n
+        ##
+
+
     def add_sin(self, amp, n):
         self.y_n += self.dist_scale*amp*np.sin(self.x_n*(2*n*np.pi))
 
@@ -101,13 +109,20 @@ class EnergyDepositionModel:
             min_value = min(np.min(y_diff), min_value)
             max_value = max(np.max(y_diff), min_value)
 
-            decay_x = np.exp(-self.decay_n * y_diff)
+            decay_x = np.exp(-self.decay_n * y_diff)/(1.0+np.exp(-self.rms_slope*(y_diff-self.rms_n)))
+
+            #plt.plot(self.x, np.lib.pad(decay_x, (0, pad_len), 'constant'))
+            #plt.show()
+
+            #plt.plot(y_diff/self.dist_scale, (1.0/(1.0+np.exp(-self.rms_slope*(y_diff-self.rms_n)))))
+            #plt.show()
 
             # @3 multipl decay and energy depostion and roll back
             erosion_sum += np.roll(np.lib.pad(self.energy_gauss * decay_x, (0, pad_len), 'constant'), i)
 
         if show:
             print min_value, max_value
+            print "SIZE:", max(self.x_n) - min(self.y_n)
             plt.plot(self.x, erosion_sum/max(erosion_sum))
             plt.plot(self.x, self.y_n/max(self.y_n))
             plt.show()
@@ -117,9 +132,13 @@ class EnergyDepositionModel:
 
 
 
-ed = EnergyDepositionModel(x_nodes=40, samp_len=200, gsigma=30, gshift=30, erosion=1)
+ed = EnergyDepositionModel(x_nodes=500, samp_len=400, gsigma=30, gshift=30, erosion=0.5, rms=9)
 #ed.show_energy_gauss()
-ed.add_sin(1,2)
+ed.add_sin(0.02,3)
+for i in range(100):
+    ed.single_update()
+    if i%10==1:
+        ed.single_update(True)
 #ed.show_surface(True)
 #for i in range(30):
 #    ed.single_update()
