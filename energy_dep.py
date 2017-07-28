@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.widgets import Slider
 
 
 class EnergyDepositionModel:
@@ -34,6 +35,8 @@ class EnergyDepositionModel:
 
         self.y_n = np.zeros(self.x_n.shape, dtype=float)
 
+        self.y_history = []
+        self.history_initialized = False
 
         self.erosion = kwargs.get('erosion', 0.01) # [A/s]
         self.erosion_n = self.erosion*self.dist_scale # [dist*/s]
@@ -77,6 +80,10 @@ class EnergyDepositionModel:
     def add_sin(self, amp, n):
         self.y_n += self.dist_scale*amp*np.sin(self.x_n*(2*n*np.pi))
 
+    def add_gauss(self, amp, sigma, shift):
+        self.y_n += amp*self.dist_scale*np.exp(-np.power(self.x_n-shift*self.dist_scale,2)/(2*np.power(sigma*self.dist_scale, 2)))
+
+
     def show_energy_gauss(self):
         plt.plot(self.x[:self.ion_range_nodes], self.energy_gauss)
         plt.show()
@@ -89,6 +96,10 @@ class EnergyDepositionModel:
         plt.show()
 
     def single_update(self, show=False):
+        if not self.history_initialized:
+            self.history_initialized = True
+            self.y_history.append(self.y_n/self.dist_scale)
+
         erosion_sum = np.zeros(self.x_n.shape, dtype=float)
         pad_len = self.x_nodes-self.ion_range_nodes
         min_value = 1000.0
@@ -129,16 +140,34 @@ class EnergyDepositionModel:
 
         self.y_n -= erosion_sum
         self.y_n -= np.mean(self.y_n)
+        self.y_history.append(self.y_n/self.dist_scale)
+
+    def show_history(self):
+        fig, ax = plt.subplots()
+        plt.subplots_adjust(bottom=0.25)
+
+        plt.axis([self.x[0], self.x[-1], -0.2, 0.2])
+
+        plot_current, = plt.plot(self.x, self.y_history[0])
+
+        axslider = plt.axes([0.15, 0.1, 0.65, 0.05])
+        slider = Slider(axslider, 'Tmp', 0, len(self.y_history)-1, valinit=0)
+
+        def update(val):
+            #print "choosen {}/{}".format(int(val), len(self.y_history))
+            selection = self.y_history[int(val)]
+            plot_current.set_ydata(selection)
+
+        slider.on_changed(update)
+        plt.show()
 
 
-
-ed = EnergyDepositionModel(x_nodes=500, samp_len=400, gsigma=30, gshift=30, erosion=0.5, rms=9)
+ed = EnergyDepositionModel(x_nodes=1000, samp_len=1000, gsigma=30, gshift=30, erosion=0.5, rms=9,theat=40)
 #ed.show_energy_gauss()
-ed.add_sin(0.02,3)
-for i in range(100):
+ed.add_gauss(1, 20, 500)
+for i in range(600):
     ed.single_update()
-    if i%10==1:
-        ed.single_update(True)
+ed.show_history()
 #ed.show_surface(True)
 #for i in range(30):
 #    ed.single_update()
