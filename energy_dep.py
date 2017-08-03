@@ -30,7 +30,7 @@ class EnergyDepositionModel:
 
         self.x_nodes = kwargs.get('x_nodes', 500)
         self.x_n = np.linspace(0, 1.0, self.x_nodes, endpoint=False)
-        self.dx = self.x_n[1]
+        self.dx_n = self.x_n[1]
         self.x = self.x_n*self.sample_len
 
         self.y_n = np.zeros(self.x_n.shape, dtype=float)
@@ -53,6 +53,9 @@ class EnergyDepositionModel:
         self.theta_deg = kwargs.get('theta', 60) # [deg]
         self.theta = np.radians(self.theta_deg) # [rad]
 
+        self.diffusion = kwargs.get('diffusion', 1) # [A^2/s]
+        self.diffusion_n = self.diffusion*np.power(self.dist_scale, 2) / np.power(self.dx_n, 2) #
+
         # energy deposition gaussian
         self.ion_range = 4*self.gsigma*np.sin(self.theta) # [A] ! alogn x !
         if self.ion_range > self.sample_len:
@@ -61,7 +64,7 @@ class EnergyDepositionModel:
                              .format(self.ion_range, self.sample_len))
         self.ion_range_n = self.ion_range*self.dist_scale # [dist*]
 
-        self.ion_range_nodes = int(self.ion_range_n/self.dx) # [number of nodes]
+        self.ion_range_nodes = int(self.ion_range_n/self.dx_n) # [number of nodes]
         if self.ion_range_nodes < 2:
             raise ValueError("Something wrong with number of ion_range_nodes")
 
@@ -108,6 +111,7 @@ class EnergyDepositionModel:
         x_n = np.linspace(0, 2.0, 2*self.x_nodes, endpoint=False)
         x = x_n*self.sample_len
 
+        normal_noise = np.abs(np.random.normal(0, 1, self.x_nodes))
         for i in range(self.x_nodes):
             # @1 roll surface
             y_roll = np.roll(self.y_n, -i)
@@ -129,7 +133,7 @@ class EnergyDepositionModel:
             #plt.show()
 
             # @3 multipl decay and energy depostion and roll back
-            erosion_sum += np.roll(np.lib.pad(self.energy_gauss * decay_x, (0, pad_len), 'constant'), i)
+            erosion_sum += np.roll(np.lib.pad(self.energy_gauss * decay_x, (0, pad_len), 'constant'), i)*normal_noise[i]
 
         if show:
             print min_value, max_value
@@ -139,6 +143,12 @@ class EnergyDepositionModel:
             plt.show()
 
         self.y_n -= erosion_sum
+
+        # compute diffusion
+        if self.diffusion:
+            diff = np.diff(np.pad(self.y_n, (1, 1), 'wrap'), 2) * self.diffusion
+            self.y_n += diff
+
         self.y_n -= np.mean(self.y_n)
         self.y_history.append(self.y_n/self.dist_scale)
 
@@ -162,16 +172,16 @@ class EnergyDepositionModel:
         plt.show()
 
 
-ed = EnergyDepositionModel(x_nodes=1000, samp_len=1000, gsigma=30, gshift=30, erosion=0.5, rms=9,theat=40)
+ed = EnergyDepositionModel(x_nodes=1000, samp_len=400, gsigma=28, gshift=30, erosion=0.03, rms=1,theat=40, diffusion=0.002)
 #ed.show_energy_gauss()
-ed.add_gauss(1, 20, 500)
-for i in range(600):
+#ed.add_gauss(0.1, 20, 50)
+#ed.add_sin(0.1,10)
+#ed.add_sin(0.1,31)
+#ed.add_sin(0.1,52)
+for i in range(2200):
     ed.single_update()
 ed.show_history()
 #ed.show_surface(True)
 #for i in range(30):
 #    ed.single_update()
 #    ed.single_update(True)
-
-
-
