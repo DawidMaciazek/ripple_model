@@ -13,7 +13,7 @@ class MTools:
 
 class SurfEnergyDepositionModel:
     def __init__(self, **kwargs):
-        self.sample_len_u = kwargs.get('sample_len', 100)
+        self.sample_len_u = kwargs.get('sample_len', 400)
         self.dist_scale = 1.0/self.sample_len_u
 
         self.nodes = kwargs.get('nodes', 50)
@@ -26,8 +26,9 @@ class SurfEnergyDepositionModel:
         self.Y = self.X.T
 
         # ion erosion
-        self.erosion_u = kwargs.get('erosion', 0.000001)  # [A(z)/A^2(xy)*s]
-        self.erosion = (self.erosion_u*self.xy_spacing)/self.dist_scale
+        self.erosion_u = kwargs.get('erosion', 0.1)  # [A(z)/A^2(xy)*s]
+        self.erosion = (self.erosion_u*self.xy_spacing[1])/self.dist_scale
+        print self.erosion
 
         self.theta_deg = kwargs.get('theta', 60)
         self.theta = np.radians(self.theta_deg)
@@ -47,7 +48,7 @@ class SurfEnergyDepositionModel:
 
         self.xion_indexes = np.sum(self.xy_spacing < self.xion_range)
 
-        self.ysigma_u = kwargs.get('ysigma', 5)  # [A]
+        self.ysigma_u = kwargs.get('ysigma', 12)  # [A]
         self.ysigma = self.ysigma_u*self.dist_scale
 
         self.yion_range = self.ysigma*3
@@ -61,6 +62,7 @@ class SurfEnergyDepositionModel:
             np.power(-(self.xy_spacing[:self.xion_indexes]-self.shift)
                      *(1.0/np.sin(self.theta)), 2)
             / (2.0*np.power(self.xsigma, 2)))
+        self.z_const_diff = self.xy_spacing[:self.xion_indexes]/np.tan(self.theta)
 
         self.y_gauss = np.exp(-np.power(self.xy_spacing[:self.yion_indexes], 2)
                               / (2.0*np.power(self.ysigma, 2)))
@@ -119,8 +121,6 @@ class SurfEnergyDepositionModel:
         slider.on_changed(update)
         plt.show()
 
-
-
     def run_single(self):
         if self.Z_initialized == False:
             self.Z_initialized = True
@@ -129,16 +129,19 @@ class SurfEnergyDepositionModel:
         # ion erosion
         Z_pad = np.pad(self.Z, [[(self.yion_indexes-1)*2, (self.yion_indexes-1)*2], [self.xion_indexes-1, self.xion_indexes-1]], 'wrap')
         Z_erosion = np.zeros(Z_pad.shape, dtype=float)
+        random_noise = np.abs(np.random.normal(0, 1, Z_erosion.shape))
         # print Z_pad.shape, self.xion_indexes, self.yion_indexes
         # loop over y dim
         #self.x_gauss
         for i_y in xrange((self.yion_indexes-1), self.nodes+3*(self.yion_indexes-1)):
             for i_x in xrange(0, self.nodes+self.xion_indexes-1):
                 for j_y in xrange(-self.yion_indexes+1, self.yion_indexes):
-                    Z_erosion[i_y+j_y][i_x:(i_x+self.xion_indexes)] += (
-                    self.x_gauss*self.y_gauss[j_y+self.yion_last] )
-        self.Z -= Z_erosion[2*(self.yion_indexes-1):self.nodes+2*(self.yion_indexes-1), self.xion_indexes-1:self.nodes+self.xion_indexes-1]
+                    z_diff = self.z_const_diff + (Z_pad[i_y+j_y,i_x:(i_x+self.xion_indexes)] - Z_pad[i_y,i_x])
+                    Z_erosion[i_y+j_y][i_x:(i_x+self.xion_indexes)] += self.erosion*(
+                    self.x_gauss*self.y_gauss[j_y+self.yion_last] ) * (
+                        np.exp(-self.decay * z_diff)/(1.0+np.exp(-self.rms_slope*(z_diff-self.rms)))) * random_noise[i_y+j_y][i_x]
 
+        self.Z -= Z_erosion[2*(self.yion_indexes-1):self.nodes+2*(self.yion_indexes-1), self.xion_indexes-1:self.nodes+self.xion_indexes-1]
 
         # diffusion part
         # along x axis
@@ -150,10 +153,15 @@ class SurfEnergyDepositionModel:
 
         self.Z_history.append(self.Z.copy())
 
-model = SurfEnergyDepositionModel(diffusion=1.0, nodes=20)
-#model.add_gauss(0.1,50,7, 44,3)
-model.add_sin(100,2,0)
+model = SurfEnergyDepositionModel(diffusion=0.50, nodes=70, erosion=0.01, theta=80)
+#model.add_sin(0.1,2,0)
+#model.add_sin(0.1,1,6)
+#model.add_sin(0.1,3,11)
 
-for i in range(10):
+import time
+t = time.time()
+for i in range(2500):
+    print "{}  ({} s)".format(i, time.time()-t)
+    t = time.time()
     model.run_single()
 model.show_history()
