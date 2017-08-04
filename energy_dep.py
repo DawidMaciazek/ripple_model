@@ -52,6 +52,7 @@ class EnergyDepositionModel:
 
         self.theta_deg = kwargs.get('theta', 60) # [deg]
         self.theta = np.radians(self.theta_deg) # [rad]
+        print self.theta_deg, self.theta
 
         self.diffusion = kwargs.get('diffusion', 1) # [A^2/s]
         self.diffusion_n = self.diffusion*np.power(self.dist_scale, 2) / np.power(self.dx_n, 2) #
@@ -116,7 +117,7 @@ class EnergyDepositionModel:
             # @1 roll surface
             y_roll = np.roll(self.y_n, -i)
             # @2 calculate diff in distace
-            y_diff = (y_roll[:self.ion_range_nodes] - y_roll[0]) + self.x_n[:self.ion_range_nodes]
+            y_diff = (y_roll[:self.ion_range_nodes] - y_roll[0]) + self.x_n[:self.ion_range_nodes]/np.tan(self.theta)
 
             if show:
                 plt.plot(x[i:(self.ion_range_nodes+i)] ,y_diff)
@@ -125,6 +126,7 @@ class EnergyDepositionModel:
             max_value = max(np.max(y_diff), min_value)
 
             decay_x = np.exp(-self.decay_n * y_diff)/(1.0+np.exp(-self.rms_slope*(y_diff-self.rms_n)))
+
 
             #plt.plot(self.x, np.lib.pad(decay_x, (0, pad_len), 'constant'))
             #plt.show()
@@ -172,13 +174,13 @@ class EnergyDepositionModel:
         plt.show()
 
 
-ed = EnergyDepositionModel(x_nodes=1000, samp_len=400, gsigma=28, gshift=30, erosion=0.03, rms=1,theat=40, diffusion=0.002)
+ed = EnergyDepositionModel(x_nodes=800, samp_len=400, gsigma=28, gshift=30, erosion=0.03, rms=1, theta=75, diffusion=0.002)
 #ed.show_energy_gauss()
 #ed.add_gauss(0.1, 20, 50)
-#ed.add_sin(0.1,10)
+#ed.add_sin(3.1,4)
 #ed.add_sin(0.1,31)
 #ed.add_sin(0.1,52)
-for i in range(2200):
+for i in range(1000):
     ed.single_update()
 ed.show_history()
 #ed.show_surface(True)
