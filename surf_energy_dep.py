@@ -14,7 +14,7 @@ class MTools:
 
 class SurfEnergyDepositionModel:
     def __init__(self, **kwargs):
-        self.sample_len_u = kwargs.get('sample_len', 400)
+        self.sample_len_u = kwargs.get('sample_len', 100)
         self.dist_scale = 1.0/self.sample_len_u
 
         self.nodes = kwargs.get('nodes', 50)
@@ -147,13 +147,19 @@ class SurfEnergyDepositionModel:
                     self.x_gauss*self.y_gauss[j_y+self.yion_last] ) * (
                         np.exp(-self.decay * z_diff)/(1.0+np.exp(-self.rms_slope*(z_diff-self.rms)))) * random_noise[i_y+j_y][i_x]
                     if show:
+                        # erosion result
                         plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)],
                                  Z_erosion[i_y+j_y][i_x:(i_x+self.xion_indexes)]/max(Z_erosion[i_y+j_y][i_x:(i_x+self.xion_indexes)]), 'ro')
-                        plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)] ,
-                                 Z_pad[i_y+j_y][i_x:(i_x+self.xion_indexes)]/max(Z_pad[i_y+j_y][i_x:(i_x+self.xion_indexes)]))
 
+                        # surface at the moment
                         plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)] ,
-                                 self.x_gauss/max(self.x_gauss), 'g')
+                                 Z_pad[i_y+j_y][i_x:(i_x+self.xion_indexes)]/max(Z_pad[i_y+j_y][i_x:(i_x+self.xion_indexes)]), 'g')
+
+                        # surface gauss energy
+                        plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)] ,
+                                 self.x_gauss/max(self.x_gauss), 'y')
+                        print self.z_const_diff
+                        plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)] , self.z_const_diff/max(Z_pad[i_y+j_y][i_x:(i_x+self.xion_indexes)]), 'r')
 
                         plt.show()
 
@@ -170,18 +176,19 @@ class SurfEnergyDepositionModel:
 
         self.Z_history.append(self.Z.copy())
 
+
 model = SurfEnergyDepositionModel(diffusion=0.20, nodes=50, erosion=0.01, theta=50)
-model.show()
 #model.add_sin(0.1,2,0)
 #model.add_sin(0.1,1,6)
-#model.add_sin(0.1,3,11)
+model.add_sin(10,2,0)
+
+model.show()
 
 import time
 t = time.time()
 for i in range(10):
     print "{}  ({} s)".format(i, time.time()-t)
     t = time.time()
-    model.run_single()
+    model.run_single(True)
 model.show_history()
 
-model.run_single(True)
