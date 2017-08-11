@@ -5,6 +5,10 @@ from matplotlib.widgets import Slider
 from matplotlib import cm
 import sys
 
+# TO DO:
+# add gauss dist integration normalization
+# >> for flat surface assumption >>
+
 class MTools:
     @staticmethod
     def gauss2d(x, x0, xs, y, y0, ys):
@@ -115,6 +119,8 @@ class SurfEnergyDepositionModel:
 
 
         ax.plot_surface(self.X, self.Y, self.Z_history[0], cmap=cm.coolwarm, linewidth=0, antialiased=False)
+        ax.set_xlabel('X axis')
+        ax.set_ylabel('Y axis')
         #ax.plot_wireframe(self.X, self.Y, self.Z_history[0])
 
         axslider = plt.axes([0.15, 0.1, 0.65, 0.05])
@@ -122,7 +128,9 @@ class SurfEnergyDepositionModel:
 
         def update(val):
             ax.clear()
-            ax.plot_surface(self.X, self.Y, self.Z_history[int(val)], cmap=cm.coolwarm, linewidth=0, antialiased=False)
+            ax.set_xlabel('X axis')
+            ax.set_ylabel('Y axis')
+            ax.plot_surface(self.X/self.dist_scale, self.Y/self.dist_scale, self.Z_history[int(val)]/self.dist_scale, cmap=cm.coolwarm, linewidth=0, antialiased=False)
 
         slider.on_changed(update)
         plt.show()
@@ -145,7 +153,8 @@ class SurfEnergyDepositionModel:
                     z_diff = self.z_const_diff + (Z_pad[i_y+j_y,i_x:(i_x+self.xion_indexes)] - Z_pad[i_y,i_x])
                     Z_erosion[i_y+j_y][i_x:(i_x+self.xion_indexes)] += self.erosion*(
                     self.x_gauss*self.y_gauss[j_y+self.yion_last] ) * (
-                        np.exp(-self.decay * z_diff)/(1.0+np.exp(-self.rms_slope*(z_diff-self.rms)))) * random_noise[i_y+j_y][i_x]
+                        np.exp(-self.decay * z_diff)/(1.0+np.exp(-self.rms_slope*(z_diff-self.rms)))) * random_noise[i_y][i_x]
+                    '''
                     if show:
                         # erosion result
                         plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)],
@@ -153,16 +162,35 @@ class SurfEnergyDepositionModel:
 
                         # surface at the moment
                         plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)] ,
-                                 Z_pad[i_y+j_y][i_x:(i_x+self.xion_indexes)]/max(Z_pad[i_y+j_y][i_x:(i_x+self.xion_indexes)]), 'g')
+                                 Z_pad[i_y+j_y][i_x:(i_x+self.xion_indexes)]/max(np.abs(Z_pad[i_y+j_y][i_x:(i_x+self.xion_indexes)])), 'g')
+                        # diff
+                        plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)], z_diff/max(np.abs(Z_pad[i_y+j_y][i_x:(i_x+self.xion_indexes)])), 'b')
+                        # trajectory
+                        plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)], self.z_const_diff/max(np.abs(Z_pad[i_y+j_y][i_x:(i_x+self.xion_indexes)])), 'r')
 
                         # surface gauss energy
-                        plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)] ,
+                        plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)],
                                  self.x_gauss/max(self.x_gauss), 'y')
-                        print self.z_const_diff
-                        plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)] , self.z_const_diff/max(Z_pad[i_y+j_y][i_x:(i_x+self.xion_indexes)]), 'r')
 
                         plt.show()
+                    '''
 
+                '''
+                plt.imshow(Z_pad)
+                plt.show()
+
+                plt.imshow(Z_erosion)
+                plt.show()
+                '''
+                #
+            #
+        #
+        if show:
+            plt.imshow(Z_pad[2*(self.yion_indexes-1):self.nodes+2*(self.yion_indexes-1), self.xion_indexes-1:self.nodes+self.xion_indexes-1])
+            plt.show()
+
+            plt.imshow(Z_erosion [2*(self.yion_indexes-1):self.nodes+2*(self.yion_indexes-1), self.xion_indexes-1:self.nodes+self.xion_indexes-1])
+            plt.show()
 
         self.Z -= Z_erosion[2*(self.yion_indexes-1):self.nodes+2*(self.yion_indexes-1), self.xion_indexes-1:self.nodes+self.xion_indexes-1]
 
@@ -177,18 +205,25 @@ class SurfEnergyDepositionModel:
         self.Z_history.append(self.Z.copy())
 
 
-model = SurfEnergyDepositionModel(diffusion=0.20, nodes=50, erosion=0.01, theta=50)
-#model.add_sin(0.1,2,0)
+model = SurfEnergyDepositionModel(diffusion=0.00005, nodes=25, erosion=0.0001, theta=60,sample_len=400, ysigma=20)
 #model.add_sin(0.1,1,6)
-model.add_sin(10,2,0)
+#model.add_sin(0,2,0)
+#model.add_gauss(0.01, 100, 20, 100, 20)
+#model.add_sin(0.5,0,7)
 
 model.show()
 
 import time
 t = time.time()
-for i in range(10):
-    print "{}  ({} s)".format(i, time.time()-t)
-    t = time.time()
-    model.run_single(True)
-model.show_history()
+w = int(raw_input("run for:"))
+while w>0:
+    for i in range(w):
+        print "{}  ({} s)".format(i, time.time()-t)
+        t = time.time()
+        model.run_single()
+        if w == 1:
+            model.run_single(True)
+
+    model.show_history()
+    w = int(raw_input("run for:"))
 
