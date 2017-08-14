@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import axes3d
 from matplotlib.widgets import Slider
 from matplotlib import cm
-import sys
 
 # TO DO:
 # add gauss dist integration normalization
@@ -24,6 +23,7 @@ class SurfEnergyDepositionModel:
         self.nodes = kwargs.get('nodes', 50)
 
         self.xy_spacing = np.linspace(0, 1.0, self.nodes, endpoint=False)
+        print "SPACING", self.xy_spacing[1]
         self.xy_d = self.xy_spacing[1]
         self.Z = np.zeros((self.nodes, self.nodes), dtype=float)
 
@@ -90,7 +90,8 @@ class SurfEnergyDepositionModel:
 
         # diffusion
         self.diffusion_u = kwargs.get('diffusion', 10)
-        self.diffusion = (self.diffusion_u*np.power(self.dist_scale,2))/np.power(self.xy_d, 2)
+        self.diffusion = self.diffusion_u*np.power(self.dist_scale,2)
+        self.diffusion = self.diffusion/np.power(self.xy_d, 2)
         print "DIFFUSION: {}".format(self.diffusion)
 
         self.Z_history = []
@@ -164,7 +165,7 @@ class SurfEnergyDepositionModel:
                     z_diff = self.z_const_diff + (Z_pad[i_y+j_y,i_x:(i_x+self.xion_indexes)] - Z_pad[i_y,i_x])
                     Z_erosion[i_y+j_y][i_x:(i_x+self.xion_indexes)] += self.erosion*(
                     self.x_gauss*self.y_gauss[j_y+self.yion_last] ) * (
-                        np.exp(-self.decay * z_diff)/(1.0+np.exp(-self.rms_slope*(z_diff-self.rms)))) * random_noise[i_y][i_x]
+                        np.exp(-self.decay * z_diff)/(1.0+np.exp(-self.rms_slope*(z_diff-self.rms))))# * random_noise[i_y][i_x]
                     '''
                     if show:
                         # erosion result
@@ -189,18 +190,21 @@ class SurfEnergyDepositionModel:
                 '''
                 plt.imshow(Z_pad)
                 plt.show()
-
                 plt.imshow(Z_erosion)
                 plt.show()
                 '''
+
+            plt.imshow(Z_erosion[0:2*self.yion_indexes])
+            plt.show()
                 #
             #
         #
         if show:
-            plt.imshow(Z_pad[2*(self.yion_indexes-1):self.nodes+2*(self.yion_indexes-1), self.xion_indexes-1:self.nodes+self.xion_indexes-1])
-            plt.show()
+            ax = plt.subplot2grid((1,2), (0, 0))
+            ax.imshow(Z_pad[2*(self.yion_indexes-1):self.nodes+2*(self.yion_indexes-1), self.xion_indexes-1:self.nodes+self.xion_indexes-1])
 
-            plt.imshow(Z_erosion [2*(self.yion_indexes-1):self.nodes+2*(self.yion_indexes-1), self.xion_indexes-1:self.nodes+self.xion_indexes-1])
+            ax2 = plt.subplot2grid((1,2), (0,1))
+            ax2.imshow(Z_erosion [2*(self.yion_indexes-1):self.nodes+2*(self.yion_indexes-1), self.xion_indexes-1:self.nodes+self.xion_indexes-1])
             plt.show()
 
         self.Z -= Z_erosion[2*(self.yion_indexes-1):self.nodes+2*(self.yion_indexes-1), self.xion_indexes-1:self.nodes+self.xion_indexes-1]
@@ -211,24 +215,37 @@ class SurfEnergyDepositionModel:
         x_diff = np.diff(Z_pad, 2, 1)[1:-1]
         y_diff = np.diff(Z_pad, 2, 0)[:,1:-1]
 
+        '''
+        ax = plt.subplot2grid((2,2), (0,0))
+        ax.imshow(Z_pad[:3,:3])
+
+        ax1 = plt.subplot2grid((2,2), (0,1))
+        ax1.imshow(Z_pad[:3,-3:])
+
+        ax2 = plt.subplot2grid((2,2), (1,0))
+        ax2.imshow(Z_pad[-3:,:3])
+
+        ax3 = plt.subplot2grid((2,2), (1,1))
+        ax3.imshow(Z_pad[-3:,-3:])
+
+        plt.show()
+        '''
+
         self.Z += self.diffusion*(x_diff + y_diff)
-
-        if show:
-            plt.imshow(self.diffusion*(x_diff + y_diff))
-            plt.show()
-
 
         self.Z_history.append(self.Z.copy())
 
-model = SurfEnergyDepositionModel(diffusion=10.0100, nodes=70, erosion=0.0002, theta=80,sample_len=400, ysigma=12, rms=2)
+model = SurfEnergyDepositionModel(diffusion=01.1100, nodes=60, erosion=0.0010, theta=85,sample_len=300, ysigma=8, rms=1.1)
 #model.add_sin(0.1,1,6)
-#model.add_sin(5,0,2)
-#model.add_gauss(0.01, 100, 20, 100, 20)
+model.add_sin(1,0,1)
 #model.add_sin(0.5,0,7)
 
-model.show()
+#model.show()
+
+#model.add_gauss(1.00, 200, 20, 200, 20)
 
 import time
+
 t = time.time()
 w = int(raw_input("run for:"))
 while w>0:
@@ -238,7 +255,8 @@ while w>0:
         model.run_single()
         if w == 1:
             model.run_single(True)
-    model.erosion = 0
-    model.show_history()
+    #model.erosion = 0
+    model.show_history()#mode='surf')
+    model.show_history(mode='surf')
     w = int(raw_input("run for:"))
 
