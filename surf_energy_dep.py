@@ -91,6 +91,7 @@ class SurfEnergyDepositionModel:
         # diffusion
         self.diffusion_u = kwargs.get('diffusion', 10)
         self.diffusion = (self.diffusion_u*np.power(self.dist_scale,2))/np.power(self.xy_d, 2)
+        print "DIFFUSION: {}".format(self.diffusion)
 
         self.Z_history = []
         self.Z_initialized = False
@@ -111,26 +112,36 @@ class SurfEnergyDepositionModel:
         ax.plot_surface(self.X, self.Y, self.Z, cmap=cm.coolwarm, linewidth=0, antialiased=False)
         plt.show()
 
-    def show_history(self):
+    def show_history(self, mode='img'):
         #fig, ax = plt.subplots()
         #plt.subplots_adjust(bottom=0.25)
         fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
 
+        if mode == 'img':
+            ax = fig.add_subplot(111)
+            axslider = plt.axes([0.15, 0.1, 0.65, 0.05])
+            slider = Slider(axslider, "Tmp", 0, len(self.Z_history)-1, valinit=0)
 
-        ax.plot_surface(self.X, self.Y, self.Z_history[0], cmap=cm.coolwarm, linewidth=0, antialiased=False)
-        ax.set_xlabel('X axis')
-        ax.set_ylabel('Y axis')
-        #ax.plot_wireframe(self.X, self.Y, self.Z_history[0])
+            ax.imshow(self.Z_history[0])
 
-        axslider = plt.axes([0.15, 0.1, 0.65, 0.05])
-        slider = Slider(axslider, "Tmp", 0, len(self.Z_history)-1, valinit=0)
+            def update(val):
+                ax.clear()
+                ax.imshow(self.Z_history[int(val)])
+        else:
+            ax = fig.add_subplot(111, projection='3d')
+            axslider = plt.axes([0.15, 0.1, 0.65, 0.05])
+            slider = Slider(axslider, "Tmp", 0, len(self.Z_history)-1, valinit=0)
 
-        def update(val):
-            ax.clear()
+            ax.plot_surface(self.X, self.Y, self.Z_history[0], cmap=cm.coolwarm, linewidth=0, antialiased=False)
             ax.set_xlabel('X axis')
             ax.set_ylabel('Y axis')
-            ax.plot_surface(self.X/self.dist_scale, self.Y/self.dist_scale, self.Z_history[int(val)]/self.dist_scale, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+            #ax.plot_wireframe(self.X, self.Y, self.Z_history[0])
+
+            def update(val):
+                ax.clear()
+                ax.set_xlabel('X axis')
+                ax.set_ylabel('Y axis')
+                ax.plot_surface(self.X/self.dist_scale, self.Y/self.dist_scale, self.Z_history[int(val)]/self.dist_scale, cmap=cm.coolwarm, linewidth=0, antialiased=False)
 
         slider.on_changed(update)
         plt.show()
@@ -202,12 +213,16 @@ class SurfEnergyDepositionModel:
 
         self.Z += self.diffusion*(x_diff + y_diff)
 
+        if show:
+            plt.imshow(self.diffusion*(x_diff + y_diff))
+            plt.show()
+
+
         self.Z_history.append(self.Z.copy())
 
-
-model = SurfEnergyDepositionModel(diffusion=0.00005, nodes=25, erosion=0.0001, theta=60,sample_len=400, ysigma=20)
+model = SurfEnergyDepositionModel(diffusion=10.0100, nodes=70, erosion=0.0002, theta=80,sample_len=400, ysigma=12, rms=2)
 #model.add_sin(0.1,1,6)
-#model.add_sin(0,2,0)
+#model.add_sin(5,0,2)
 #model.add_gauss(0.01, 100, 20, 100, 20)
 #model.add_sin(0.5,0,7)
 
@@ -223,7 +238,7 @@ while w>0:
         model.run_single()
         if w == 1:
             model.run_single(True)
-
+    model.erosion = 0
     model.show_history()
     w = int(raw_input("run for:"))
 
