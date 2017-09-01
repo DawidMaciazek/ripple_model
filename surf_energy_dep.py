@@ -23,7 +23,7 @@ class SurfEnergyDepositionModel:
         self.nodes = kwargs.get('nodes', 50)
 
         self.xy_spacing = np.linspace(0, 1.0, self.nodes, endpoint=False)
-        print "SPACING", self.xy_spacing[1]
+        print("SPACING", self.xy_spacing[1])
         self.xy_d = self.xy_spacing[1]
         self.Z = np.zeros((self.nodes, self.nodes), dtype=float)
 
@@ -33,7 +33,7 @@ class SurfEnergyDepositionModel:
         # ion erosion
         self.erosion_u = kwargs.get('erosion', 0.1)  # [A(z)/A^2(xy)*s]
         self.erosion = (self.erosion_u*self.xy_spacing[1])/self.dist_scale
-        print self.erosion
+        print(self.erosion)
 
         self.theta_deg = kwargs.get('theta', 60)
         self.theta = np.radians(self.theta_deg)
@@ -59,7 +59,7 @@ class SurfEnergyDepositionModel:
         self.yion_range = self.ysigma*3
         if self.yion_range >= 0.5:
             raise ValueError("Ion range y bigger than sample len")
-        print "Ion range: x={}, y={}".format(self.xion_range/self.dist_scale, self.yion_range/self.dist_scale)
+        print("Ion range: x={}, y={}".format(self.xion_range/self.dist_scale, self.yion_range/self.dist_scale))
 
         self.yion_indexes = np.sum(self.xy_spacing < self.yion_range)
         self.yion_last = self.yion_indexes-1
@@ -68,8 +68,8 @@ class SurfEnergyDepositionModel:
             -np.power((self.xy_spacing[:self.xion_indexes]-self.shift)
                      *(1.0/np.sin(self.theta)), 2)
             / (2.0*np.power(self.xsigma, 2)))
-        print self.xy_spacing[:self.xion_indexes]
-        print self.shift, self.xsigma ,np.sin(self.theta)
+        print(self.xy_spacing[:self.xion_indexes])
+        print(self.shift, self.xsigma ,np.sin(self.theta))
         plt.plot(self.x_gauss)
         plt.show()
         self.z_const_diff = self.xy_spacing[:self.xion_indexes]/np.tan(self.theta)
@@ -92,12 +92,12 @@ class SurfEnergyDepositionModel:
         self.diffusion_u = kwargs.get('diffusion', 10)
         self.diffusion = self.diffusion_u*np.power(self.dist_scale,2)
         self.diffusion = self.diffusion/np.power(self.xy_d, 2)
-        print "DIFFUSION: {}".format(self.diffusion)
+        print("DIFFUSION: {}".format(self.diffusion))
 
         self.Z_history = []
         self.Z_initialized = False
 
-        print self.xion_indexes, self.yion_indexes
+        print(self.xion_indexes, self.yion_indexes)
 
     def add_gauss(self, amp, x0, xs, y0, ys):
         self.Z += amp*MTools.gauss2d(self.X, x0*self.dist_scale, xs*self.dist_scale,
@@ -155,17 +155,38 @@ class SurfEnergyDepositionModel:
         # ion erosion
         Z_pad = np.pad(self.Z, [[(self.yion_indexes-1)*2, (self.yion_indexes-1)*2], [self.xion_indexes-1, self.xion_indexes-1]], 'wrap')
         Z_erosion = np.zeros(Z_pad.shape, dtype=float)
-        random_noise = np.abs(np.random.normal(0, 1, Z_erosion.shape))
+        random_noise = np.abs(np.random.normal(0, 1, Z_pad.shape))
+
+        #calculate angle array
+        Z_pad_diff = np.pad(self.Z, [[(self.yion_indexes-1)*2, (self.yion_indexes-1)*2], [self.xion_indexes-1+1, self.xion_indexes-1]], 'wrap')
+        Z_diff = np.roll(np.diff(Z_pad_diff, 1) ,-1, axis=0)/self.xy_d
+        Z_local_angle = np.arctan(Z_diff)*57.2957795
+        Z_impact_angle = -Z_local_angle+self.theta_deg
+        Z_impact_angle[Z_impact_angle > 89.9] = 89.9
+
+        Z_impl_chance = -1.0+2.0/(1+np.exp(0.097126*(Z_impact_angle-88.68)))
+        #to_plot = -1.0+2.0/(1+np.exp(0.097126*(np.linspace(0,90)-88.68)))
+        #plt.plot(to_plot)
+        #plt.show()
+
+        if show:
+            plt.imshow(Z_impl_chance)
+            plt.colorbar()
+            plt.show()
+
         # print Z_pad.shape, self.xion_indexes, self.yion_indexes
         # loop over y dim
         #self.x_gauss
-        for i_y in xrange((self.yion_indexes-1), self.nodes+3*(self.yion_indexes-1)):
-            for i_x in xrange(0, self.nodes+self.xion_indexes-1):
-                for j_y in xrange(-self.yion_indexes+1, self.yion_indexes):
+        for i_y in range((self.yion_indexes-1), self.nodes+3*(self.yion_indexes-1)):
+            for i_x in range(0, self.nodes+self.xion_indexes-1):
+                # calculate reflection ---
+                impl_chance = Z_impl_chance[i_y,i_x]
+
+                for j_y in range(-self.yion_indexes+1, self.yion_indexes):
                     z_diff = self.z_const_diff + (Z_pad[i_y+j_y,i_x:(i_x+self.xion_indexes)] - Z_pad[i_y,i_x])
-                    Z_erosion[i_y+j_y][i_x:(i_x+self.xion_indexes)] += self.erosion*(
+                    Z_erosion[i_y+j_y][i_x:(i_x+self.xion_indexes)] += impl_chance*self.erosion*(
                     self.x_gauss*self.y_gauss[j_y+self.yion_last] ) * (
-                        np.exp(-self.decay * z_diff)/(1.0+np.exp(-self.rms_slope*(z_diff-self.rms))))# * random_noise[i_y][i_x]
+                        np.exp(-self.decay * z_diff)/(1.0+np.exp(-self.rms_slope*(z_diff-self.rms)))) * random_noise[i_y][i_x]
                     '''
                     if show:
                         # erosion result
@@ -194,8 +215,8 @@ class SurfEnergyDepositionModel:
                 plt.show()
                 '''
 
-            plt.imshow(Z_erosion[0:2*self.yion_indexes])
-            plt.show()
+            #plt.imshow(Z_erosion[0:2*self.yion_indexes])
+            #plt.show()
                 #
             #
         #
@@ -208,6 +229,11 @@ class SurfEnergyDepositionModel:
             plt.show()
 
         self.Z -= Z_erosion[2*(self.yion_indexes-1):self.nodes+2*(self.yion_indexes-1), self.xion_indexes-1:self.nodes+self.xion_indexes-1]
+
+        #plt.imshow(Z_erosion)
+        #plt.colorbar()
+        #plt.show()
+
 
         # diffusion part
         # along x axis
@@ -235,9 +261,9 @@ class SurfEnergyDepositionModel:
 
         self.Z_history.append(self.Z.copy())
 
-model = SurfEnergyDepositionModel(diffusion=01.1100, nodes=60, erosion=0.0010, theta=85,sample_len=300, ysigma=8, rms=1.1)
+model = SurfEnergyDepositionModel(diffusion=8.6100, nodes=70, erosion=0.0010, theta=60,sample_len=500, ysigma=10, rms=0.8)
 #model.add_sin(0.1,1,6)
-model.add_sin(1,0,1)
+#model.add_sin(1,0,1)
 #model.add_sin(0.5,0,7)
 
 #model.show()
@@ -247,10 +273,10 @@ model.add_sin(1,0,1)
 import time
 
 t = time.time()
-w = int(raw_input("run for:"))
+w = int(input("run for:"))
 while w>0:
     for i in range(w):
-        print "{}  ({} s)".format(i, time.time()-t)
+        print("{}  ({} s)".format(i, time.time()-t))
         t = time.time()
         model.run_single()
         if w == 1:
@@ -258,5 +284,5 @@ while w>0:
     #model.erosion = 0
     model.show_history()#mode='surf')
     model.show_history(mode='surf')
-    w = int(raw_input("run for:"))
+    w = int(input("run for:"))
 
