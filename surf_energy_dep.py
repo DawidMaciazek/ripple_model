@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import sys
 from mpl_toolkits.mplot3d import axes3d
 from matplotlib.widgets import Slider
 from matplotlib import cm
@@ -165,6 +166,7 @@ class SurfEnergyDepositionModel:
         Z_impact_angle[Z_impact_angle > 89.9] = 89.9
 
         Z_impl_chance = -1.0+2.0/(1+np.exp(0.097126*(Z_impact_angle-88.68)))
+        print(Z_impl_chance)
         #to_plot = -1.0+2.0/(1+np.exp(0.097126*(np.linspace(0,90)-88.68)))
         #plt.plot(to_plot)
         #plt.show()
@@ -183,7 +185,13 @@ class SurfEnergyDepositionModel:
                 impl_chance = Z_impl_chance[i_y,i_x]
 
                 for j_y in range(-self.yion_indexes+1, self.yion_indexes):
+
                     z_diff = self.z_const_diff + (Z_pad[i_y+j_y,i_x:(i_x+self.xion_indexes)] - Z_pad[i_y,i_x])
+
+                    print("##############################")
+                    print(j_y)
+                    print(self.y_gauss[j_y+self.yion_last])
+                    print(z_diff)
                     Z_erosion[i_y+j_y][i_x:(i_x+self.xion_indexes)] += impl_chance*self.erosion*(
                     self.x_gauss*self.y_gauss[j_y+self.yion_last] ) * (
                         np.exp(-self.decay * z_diff)/(1.0+np.exp(-self.rms_slope*(z_diff-self.rms)))) * random_noise[i_y][i_x]
@@ -200,13 +208,13 @@ class SurfEnergyDepositionModel:
                         plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)], z_diff/max(np.abs(Z_pad[i_y+j_y][i_x:(i_x+self.xion_indexes)])), 'b')
                         # trajectory
                         plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)], self.z_const_diff/max(np.abs(Z_pad[i_y+j_y][i_x:(i_x+self.xion_indexes)])), 'r')
-
                         # surface gauss energy
                         plt.plot(self.xy_spacing[i_x:(i_x+self.xion_indexes)],
                                  self.x_gauss/max(self.x_gauss), 'y')
 
                         plt.show()
                     '''
+                #sys.exit(0)
 
                 '''
                 plt.imshow(Z_pad)
@@ -261,7 +269,7 @@ class SurfEnergyDepositionModel:
 
         self.Z_history.append(self.Z.copy())
 
-model = SurfEnergyDepositionModel(diffusion=8.6100, nodes=70, erosion=0.0010, theta=60,sample_len=500, ysigma=10, rms=0.8)
+model = SurfEnergyDepositionModel(diffusion=0.051, nodes=60, erosion=0.000010, theta=80,sample_len=500, ysigma=10, rms=0.8)
 #model.add_sin(0.1,1,6)
 #model.add_sin(1,0,1)
 #model.add_sin(0.5,0,7)

@@ -15,9 +15,11 @@ warnings.filterwarnings('error')
 
 def yamamura(theta, theta_opt, f):
     try:
-        return np.power(np.cos(theta), -f)*np.exp(f * (1-np.power(np.cos(theta), -1)) * np.cos(theta_opt)  )
+        return np.power(np.cos(theta), -f+1)*np.exp(f * (1-np.power(np.cos(theta), -1)) * np.cos(theta_opt)  )
     except Warning:
-        print "np.power(np.cos(theta), -f)", np.cos(theta), -f
+        print("Shit in the fans!")
+        theta[theta > 1.5607] =1.5607
+        return np.power(np.cos(theta), -f+1)*np.exp(f * (1-np.power(np.cos(theta), -1)) * np.cos(theta_opt)  )
         sys.exit(0)
 
 #x = np.linspace(0,1.5)
@@ -25,7 +27,7 @@ def yamamura(theta, theta_opt, f):
 
 
 class Solver:
-    def __init__(self, angle, length, points, yamp=0.01, d=0.01, fval=2.4, thetao=72.7):
+    def __init__(self, angle, length, points, yamp=0.01, d=0.01, fval=2.4, thetao=72.7, gauss_sigma=7):
         self.fval = fval
         self.dist_traveled = 0.0
         self.d = d
@@ -42,9 +44,17 @@ class Solver:
 
         self.lfrog_init = False
 
-        self.x = np.linspace(0, length, num=points)
+        self.x = np.linspace(0, length, num=points, endpoint=False)
         self.y = np.full(points, 0, dtype=float)
         self.py = np.full(points, 0, dtype=float)
+
+        self.gauss_arr = np.zeros((self.points, self.points), dtype=float)
+        for i in range(self.points):
+            self.gauss_arr[i] = np.exp(-np.power(np.roll(self.x, i)-self.length/2.0 ,2)/(2.0*gauss_sigma*gauss_sigma)  )
+
+        #plt.imshow(self.gauss_arr)
+        #plt.show()
+
 
         self.frames = []
         self.py_frames = []
@@ -56,7 +66,7 @@ class Solver:
 
     def add_normal_noise(self, sigma):
         normal = np.random.normal(0, sigma, self.points)
-        for i in xrange(self.points):
+        for i in range(self.points):
             self.y[i] += normal[i]
 
     def sin_distortion(self, amp, rep=1):
@@ -88,8 +98,8 @@ class Solver:
 
         a_down = (-amp)/(end-mid)
         b_down = amp-mid*(-amp)/(end-mid)
-        print "TRIANGLE"
-        print "start:{}, mid:{}, end{}, amp{}".format(start, mid, end, amp)
+        print("TRIANGLE")
+        print("start:{}, mid:{}, end{}, amp{}".format(start, mid, end, amp))
         for i, v in enumerate(sel_up):
             if v:
                 self.y[i] += a_up*self.x[i] + b_up
@@ -99,9 +109,9 @@ class Solver:
                 self.y[i] += a_down*self.x[i] + b_down
 
     def show(self, yspace=[-2, 2], zoom=None, center=True):
-        print "TOTAL DISTANCE TRAVELED:"
-        print np.average(self.y)
-        print "-----------------------"
+        print("TOTAL DISTANCE TRAVELED:")
+        print(np.average(self.y))
+        print("-----------------------")
 
         if zoom:
             zi_start = int(zoom[0]*self.points)
@@ -175,12 +185,12 @@ class Solver:
         pairs = np.empty(self.points, dtype=float)
         angles = np.empty(self.points, dtype=float)
 
-        for i in xrange(self.points-1):
+        for i in range(self.points-1):
             langle = np.arctan((y[i+1]-y[i])/points_sep)
             fangle = -langle + angle
 
             if fangle > max_angle:
-                print "over max:", fangle * 57.3
+                print("over max:", fangle * 57.3)
                 fangle = max_angle - 0.1
             pairs[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
@@ -189,7 +199,7 @@ class Solver:
         fangle = -langle + angle
         pairs[-1] = yamp*yamamura(fangle, self.thetao, self.fval)
 
-        for i in xrange(self.points-1):
+        for i in range(self.points-1):
             y[i] -= pairs[i]*0.5
             y[i+1] -= pairs[i]*0.5
         y[0] -= pairs[-1]*0.5
@@ -213,12 +223,12 @@ class Solver:
         angles = np.empty(self.points, dtype=float)
 
         normal = np.random.normal(1, 0.0004, self.points)
-        for i in xrange(self.points-1):
+        for i in range(self.points-1):
             langle = np.arctan((y[i+1]-y[i])/points_sep)
             fangle = -langle + angle
 
             if fangle > max_angle:
-                print "over max:", fangle * 57.3
+                print("over max:", fangle * 57.3)
                 fangle = max_angle - 0.1
             pairs[i] = normal[i]*yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
@@ -261,14 +271,14 @@ class Solver:
         angles = np.empty(self.points, dtype=float)
         coef = [1.0/12, -2.0/3, 2.0/3, -1.0/12]
 
-        for i in xrange(2, self.points-2):
+        for i in range(2, self.points-2):
             tangle = y[i-2]*coef[0] + y[i-1]*coef[1] + y[i+1]*coef[2] + y[i+2]*coef[3]
             langle = np.arctan(tangle/pair_sep)
             fangle =  angle - langle
             if fangle > max_angle:
-                print "WARNING !:", fangle
+                print("WARNING !:", fangle)
                 fangle = max_angle
-                print "result::", yamamura(fangle, self.thetao, self.fval)
+                print("result::", yamamura(fangle, self.thetao, self.fval))
             partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
@@ -278,7 +288,7 @@ class Solver:
         angles[-2] = angles[-3]
 
 
-        for i in xrange(self.points):
+        for i in range(self.points):
             y[i] -= partial_yield[i]
         y[0]=y[1] = y[2]
         y[-1]=y[-2] = y[-3]
@@ -304,17 +314,17 @@ class Solver:
 
         dcoef = [-1.0/12, 4.0/3, -5.0/2.0, 4.0/3, -1.0/12]
 
-        for i in xrange(2, self.points-2):
+        for i in range(2, self.points-2):
             tangle = y[i-2]*coef[0] + y[i-1]*coef[1] + y[i+1]*coef[2] + y[i+2]*coef[3]
             langle = np.arctan(tangle/pair_sep)
             fangle =  angle - langle
             if fangle > max_angle:
-                print "WARNING !:", fangle
+                print("WARNING !:", fangle)
                 fangle = max_angle
-                print "result::", yamamura(fangle, self.thetao, self.fval)
+                print("result::", yamamura(fangle, self.thetao, self.fval))
             dangle = y[i-2]*dcoef[0] + y[i-1]*dcoef[1] + y[i]*dcoef[2] + y[i+1]*dcoef[3] + y[i+2]*dcoef[4]
             if i == 10:
-                print np.exp(GLOBAL_COEFF*dangle)
+                print(np.exp(GLOBAL_COEFF*dangle))
             partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)*np.exp(GLOBAL_COEFF*dangle)
             angles[i] = fangle
 
@@ -329,9 +339,9 @@ class Solver:
             fangle = angle - langle
 
             if fangle > max_angle:
-                print "WARNING !:", fangle
+                print("WARNING !:", fangle)
                 fangle = max_angle
-                print "BONDARY RESULT::", yamamura(fangle, self.thetao, self.fval)
+                print("BONDARY RESULT::", yamamura(fangle, self.thetao, self.fval))
 
             dangle = y[ilist[0]]*dcoef[0] + y[ilist[1]]*dcoef[1] + y[i]*dcoef[2] + y[ilist[2]]*dcoef[3] + y[ilist[3]]*dcoef[4]
             partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)*np.exp(GLOBAL_COEFF*dangle)
@@ -340,7 +350,7 @@ class Solver:
 
             diffusion[i] = d*(dangle/(pair_sep*pair_sep))
 
-        for i in xrange(self.points):
+        for i in range(self.points):
             y[i] -= partial_yield[i]
             y[i] += diffusion[i]
 
@@ -365,14 +375,14 @@ class Solver:
 
         dcoef = [-1.0/12, 4.0/3, -5.0/2.0, 4.0/3, -1.0/12]
 
-        for i in xrange(2, self.points-2):
+        for i in range(2, self.points-2):
             tangle = y[i-2]*coef[0] + y[i-1]*coef[1] + y[i+1]*coef[2] + y[i+2]*coef[3]
             langle = np.arctan(tangle/pair_sep)
             fangle =  angle - langle
             if fangle > max_angle:
-                print "WARNING !:", fangle
+                print("WARNING !:", fangle)
                 fangle = max_angle
-                print "result::", yamamura(fangle, self.thetao, self.fval)
+                print("result::", yamamura(fangle, self.thetao, self.fval))
             partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
@@ -388,9 +398,9 @@ class Solver:
             fangle = angle - langle
 
             if fangle > max_angle:
-                print "WARNING !:", fangle
+                print("WARNING !:", fangle)
                 fangle = max_angle
-                print "BONDARY RESULT::", yamamura(fangle, self.thetao, self.fval)
+                print("BONDARY RESULT::", yamamura(fangle, self.thetao, self.fval))
 
             partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
@@ -407,11 +417,11 @@ class Solver:
         #solver.gauss_distortion(22.4, 50, 5)
         #amp*mlab.normpdf(self.x ,mu, sigma)
 
-        for i in xrange(len(gauss_fun)):
+        for i in range(len(gauss_fun)):
             gauss_hit[hit_id-i] += gauss_fun[i]
 
 
-        for i in xrange(self.points):
+        for i in range(self.points):
             y[i] -= partial_yield[i] * gauss_hit[i]
             y[i] += diffusion[i]
 
@@ -432,14 +442,14 @@ class Solver:
         angles = np.empty(self.points, dtype=float)
         coef = [-1.0/60, 3.0/20, -3.0/4, 3.0/4,  -3.0/20, 1.0/60]
 
-        for i in xrange(3, self.points-3):
+        for i in range(3, self.points-3):
             tangle = y[i-3]*coef[0] + y[i-2]*coef[1] + y[i-1]*coef[2] + y[i+1]*coef[3] + y[i+2]*coef[4] + y[i+3]*coef[5]
             langle = np.arctan(tangle/pair_sep)
             fangle =  angle - langle
             if fangle > max_angle:
-                print "WARNING !:", fangle
+                print("WARNING !:", fangle)
                 fangle = max_angle
-                print "result::", yamamura(fangle, self.thetao, self.fval)
+                print("result::", yamamura(fangle, self.thetao, self.fval))
             partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
@@ -447,7 +457,7 @@ class Solver:
         angles[-1] = angles[-2] = angles[-3]  = angles[-4]
 
 
-        for i in xrange(self.points):
+        for i in range(self.points):
             y[i] -= partial_yield[i]
         y[0] = y[1] = y[2] = y[3]
         y[-1]=y[-2] = y[-3] = y[4]
@@ -468,21 +478,21 @@ class Solver:
         partial_yield = np.empty(self.points, dtype=float)
         diffusion = np.empty(self.points, dtype=float)
         angles = np.empty(self.points, dtype=float)
-        for i in xrange(self.points):
+        for i in range(self.points):
             tangle = (-y[i-1]+y[i])/points_sep
             #tangle = -(11.0/6.0)*y[i-3] + 3*y[i-2] -(3.0/2.0)*y[i-1] + (1.0/3.0)*y[i]
             langle = np.arctan(tangle)
             fangle =  angle - langle
             if fangle > max_angle:
-                print "WARNING !:", fangle
+                print("WARNING !:", fangle)
                 fangle = max_angle
-                print "result::", yamamura(fangle, self.thetao, self.fval)
+                print("result::", yamamura(fangle, self.thetao, self.fval))
             partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
             angles[i] = fangle
 
             diffusion[i] = 0
 
-        for i in xrange(self.points):
+        for i in range(self.points):
             y[i] -= partial_yield[i]
             y[i] += diffusion[i]
 
@@ -493,7 +503,7 @@ class Solver:
 
     def calc_leap_frog_2_p(self):
         if not self.lfrog_init:
-            print "init lfrog"
+            print("init lfrog")
             self.lfrog_init = True
             self.py = np.copy(self.y)
 
@@ -515,13 +525,13 @@ class Solver:
 
         dcoef = [-1.0/12, 4.0/3, -5.0/2.0, 4.0/3, -1.0/12]
         wflag = False
-        for i in xrange(2, self.points-2):
+        for i in range(2, self.points-2):
             tangle = y[i-2]*coef[0] + y[i-1]*coef[1] + y[i]*coef[2] + y[i+1]*coef[3] + y[i+2]*coef[4]
             langle = np.arctan(tangle/points_sep)
             fangle =  angle - langle
             if fangle > max_angle:
                 fangle = max_angle - 0.5
-                print "F!"
+                print("F!")
                 wflag = True
 
             partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
@@ -565,7 +575,7 @@ class Solver:
 
     def calc_leap_frog_MIX_p(self):
         if not self.lfrog_init:
-            print "init lfrog"
+            print("init lfrog")
             self.lfrog_init = True
             self.py = np.copy(self.y)
 
@@ -590,13 +600,13 @@ class Solver:
 
         dcoef = [-1.0/12, 4.0/3, -5.0/2.0, 4.0/3, -1.0/12]
         wflag = False
-        for i in xrange(2, self.points-2):
+        for i in range(2, self.points-2):
             tangle = y[i-2]*coef[0] + y[i-1]*coef[1] + y[i]*coef[2] + y[i+1]*coef[3] + y[i+2]*coef[4]
             langle = np.arctan(tangle/points_sep)
             fangle =  angle - langle
             if fangle > max_angle:
                 fangle = max_angle - 0.5
-                print "F!"
+                print("F!")
                 wflag = True
 
             partial_yield[i] = yamp*yamamura(fangle, self.thetao, self.fval)
@@ -638,8 +648,31 @@ class Solver:
         self.angle_frames.append(angles)
 
 
-    def run(self, num=100, mode=0):
-        for i in xrange(num):
+    def calc_volume_cell(self):
+
+        diff_for = np.diff(np.pad(self.y, (0, 1), 'wrap'), 1)
+        diff_back = np.diff(np.pad(self.y, (1, 0), 'wrap'), 1)
+
+        angle_for = -np.arctan(diff_for/self.points_sep) + self.angle
+        angle_back = -np.arctan(diff_back/self.points_sep) + self.angle
+
+        sput_for = yamamura(angle_for, self.thetao, self.fval)  * np.cos(angle_for)
+        sput_back = yamamura(angle_back, self.thetao, self.fval) * np.cos(angle_back)
+        #diffusion = self.d*np.diff(np.pad(self.y, (1,1), 'wrap'), 2)
+
+
+        self.y -= (sput_for+sput_back)*self.yamp #*np.random.normal(1, 0.10, self.points)
+        #self.y -= self.yamp*(sput_for+sput_back)*self.gauss_arr[np.random.randint(self.points)]
+        #self.y += diffusion
+
+
+
+        self.frames.append(np.copy(self.y))
+
+    def run(self, num=100, mode=0, print_num=500):
+        for i in range(num):
+            if i%print_num == 0:
+                print("step:{}".format(i))
             if mode == 0:
                 self.calc_step()
             elif mode == 1:
@@ -658,16 +691,18 @@ class Solver:
                 self.calc_step_ave()
             elif mode == 8:
                 self.calc_step_4_p_gauss()
+            elif mode == 9:
+                self.calc_volume_cell()
             else:
                 self.calc_step_ave()
 
 
 
 #x, np.radians(4.7), 3.01)
-solver = Solver(60, 100, 500, yamp=0.01, d=0.00000, fval=3.0)
+solver = Solver(60, 400, 100, yamp=0.00025, d=0.0000, fval=2.0)
 #solver = Solver(45, 100, 500, yamp=0.001, d=0.00009, fval=2.4)
-solver.sin_distortion(1.5, 2)
-#solver.sin_distortion(0.04, 10)
+$solver.sin_distortion(15, 1)
+#solver.sin_distortion(0.023, 13)
 #solver.sin_distortion(0.05, 12)
 #solver.sin_distortion(0.20, 3)
 #solver.sin_distortion(0.12, 7)
@@ -683,15 +718,15 @@ solver.sin_distortion(1.5, 2)
 
 #solver.add_normal_noise(0.0010)
 
-c = 10
+c = 2
 while c!=0:
-    #solver.run(c, 8)
-    solver.run(c, 4)
+    solver.run(c, 9)
     solver.show(yspace=[-2.2, 2.2])
-    solver.show(yspace=[-2.0, 2.0], zoom=[0.0,1.0])
+    #solver.show(yspace=[-2.0, 2.0], zoom=[0.0,1.0])
     #solver.show(yspace=[-0.1, 0.1], zoom=[0.53,0.562])
     #solver.show(yspace=[-0.10, 0.25], zoom=[0.555,0.58])
-    c = input("continue :")
+    c = int( input("continue :"))
+
 
 
 
