@@ -1,9 +1,10 @@
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 
-#import warnings
-#warnings.filterwarnings('error')
+import warnings
+warnings.filterwarnings('error')
 
 def yamamura(theta, theta_opt, f):
     return np.power(np.cos(theta), -f)*np.exp(f * (1-np.power(np.cos(theta), -1)) * np.cos(theta_opt)  )
@@ -74,25 +75,26 @@ class model:
         #plt.show()
 
 
-        self.y -= yamamura(angles,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.3,self.nodes_num)) #*np.roll(self.gauss_random, np.random.randint(self.nodes_num))
+        self.y -= self.erosion * yamamura(angles,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.3,self.nodes_num)) #*np.roll(self.gauss_random, np.random.randint(self.nodes_num))
         # *self.beam_gauss
         #plt.plot(yamamura(angles,self.theta_opt, self.f))
         #plt.show()
 
 
         # - (1 - cos(angl)) + (1 - cos(angl[+1]))
-        cos_res = np.cos(2*angles)
+        cos_res = np.cos(4.0*angles)
         #self.y += self.moment*(np.cos(angles) - np.cos(np.roll(angles, 1)))
-        moment = self.moment*(cos_res - np.roll(cos_res, 1))
+        #moment = self.moment*(cos_res - np.roll(cos_res, 1))
 
-        self.y += moment
+        removal = (1.0 - cos_res) # positive allways
+        forward_list = angles <= 0
+        forward_gain = removal.copy()
+        backward_gain = removal.copy()
 
-        self.counter+=1
-        if self.counter%10000 == 0:
-            print(cos_res)
-            print(moment)
-            plt.plot(moment)
-            plt.show()
+        forward_gain[np.logical_not(forward_list)] = 0.0
+        backward_gain[forward_list] = 0.0
+
+        self.y += self.moment*(np.roll(forward_gain, 1) + np.roll(backward_gain, -1) - removal)
 
 
         self.y_history.append(self.y.copy())
@@ -101,18 +103,33 @@ class model:
         l_y[-1] += self.slope_corr
         l_y[0] -= self.slope_corr-self.sample_slope*self.dx
 
-        self.y += self.diffusion*np.diff(l_y, 2)
+        try:
+            self.y += self.diffusion*np.diff(l_y, 2)
+        except:
+            self.diffusion*np.diff(l_y, 2)
+            sys.exit(1)
 
         # sample slope correction
         #l_angles = np.arc
 
 
-    def show(self):
+    def show(self, rotate=True, aspect=1):
+        self.rotate = rotate
         fig, ax = plt.subplots()
         plt.subplots_adjust(bottom=0.25)
 
-        ax.set_aspect(1)
-        plot, = ax.plot(self.x, self.y_history[-1]-np.mean(self.y_history[-1]))
+        ax.set_aspect(aspect)
+
+        if rotate:
+            rot_matrix = np.array([[np.cos(self.theta), - np.sin(self.theta)], [np.sin(self.theta), np.cos(self.theta)]])
+            xy = np.array([self.x, self.y_history[-1]])
+            xy = np.dot(rot_matrix, xy)
+            xy[0] = xy[0] - np.mean(xy[0])
+            xy[1] = xy[1] - np.mean(xy[1])
+
+            plot, = ax.plot(xy[0], xy[1])
+        else:
+            plot, = ax.plot(self.x, self.y_history[-1]-np.mean(self.y_history[-1]))
 
         axslider = plt.axes([0.15, 0.1, 0.65, 0.05])
         slider = Slider(axslider, 'Tmp', 0, len(self.y_history)-1, valinit=1)
@@ -120,26 +137,50 @@ class model:
 
         def update(val):
             selection = self.y_history[int(val)]
-            traveled=np.mean(selection)
-            plot.set_ydata(selection -traveled)
-            print("Traveled:{}".format(traveled))
+            if self.rotate:
+                xy = np.array([self.x, selection])
+                xy = np.dot(rot_matrix, xy)
+                xy[0] = xy[0] - np.mean(xy[0])
+                xy[1] = xy[1] - np.mean(xy[1])
+
+                #plot.set_ydata(xy[1])
+                ax.clear()
+                ax.plot(xy[0], xy[1])
+            else:
+                traveled=np.mean(selection)
+                plot.set_ydata(selection -traveled)
+                print("Traveled:{}".format(traveled))
 
         slider.on_changed(update)
         plt.show()
+
+
+    def show_rotated(self):
+        rot_matrix = np.array([[np.cos(self.theta), - np.sin(self.theta)], [np.sin(self.theta), np.cos(self.theta)]])
+        print(np.degrees(self.theta), np.degrees(self.theta))
+
+        xy = np.array([self.x, self.y_history[-1]])
+
+        xy = np.dot(rot_matrix, xy)
+        plt.plot(xy[0], xy[1])
+        plt.show()
+
+
 
     def add_sin(self, amp, n):
         self.y += amp*np.sin(n*2*np.pi*self.x/self.sample_len)
 
 
     def show_yam(self):
-        plt.plot(np.linspace(0,90), yamamura(np.linspace(0, np.pi/2.0), self.theta_opt, self.f))
+        plt.plot(np.linspace(-90,90), yamamura(np.linspace(-np.pi/2.0, np.pi/2.0), self.theta_opt, self.f))
         plt.show()
 
 
-m = model(theta=60, theta_opt=76, conv_sigma=1, erosion=0.1, moment=1.1, diffusion=0.1, sample_len=500, nodes_num=2000)
+m = model(theta=60, theta_opt=76, conv_sigma=50, erosion=0.1, moment=0.1, diffusion=0.2, sample_len=1000, nodes_num=2000)
 #m.show_yam()
-m.add_sin(25,2)
+#m.add_sin(2,2)
 #m.add_sin(2,12)
-m.run(8000)
-m.show()
+m.run(29000)
+m.show(rotate=True, aspect=5)
 
+m.show_rotated()
