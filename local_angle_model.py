@@ -220,14 +220,14 @@ class model2d:
         self.wrap_len = int(len(x_)/2)
         self.conv_fun = np.exp(-np.power(x_-conv_center, 2)/(2*np.power(self.conv_sigma, 2)))
         self.conv_fun = self.conv_fun/np.sum(self.conv_fun)
-        plt.plot(self.conv_fun, 'r+')
-        plt.show()
+        #plt.plot(self.conv_fun, 'r+')
+        #plt.show()
 
         self.angles_x = np.empty(self.Z.shape, dtype=float)
         self.angles_y = np.empty(self.Z.shape, dtype=float)
         self.Z_history = []
 
-    def single_step(self):
+    def single_step(self, look_up=False):
         self.Z_history.append(self.Z.copy())
         l_z = np.pad(self.Z, ((0, 1), (0,1)), mode='wrap')
         l_z[:,-1] += self.slope_corr
@@ -239,7 +239,10 @@ class model2d:
         l_angles_y = np.arctan(l_slopes_y)
 
         wrap_angles_x = np.pad(l_angles_x, (self.wrap_len, self.wrap_len-1), mode='wrap')
-        wrap_angles_y = np.pad(l_angles_y, (self.wrap_len, self.wrap_len-1), mode='wrap')
+        #wrap_angles_x = np.zeros(wrap_angles_x.shape, dtype=float)
+        # ! Transpose y before convolution (and after) !
+        wrap_angles_y = np.pad(l_angles_y, (self.wrap_len, self.wrap_len-1), mode='wrap').T
+        #wrap_angles_y =np.zeros(wrap_angles_y.shape, dtype=float) #np.pad(l_angles_y, (self.wrap_len, self.wrap_len-1), mode='wrap').T
         #angles_x = np.convolve(wrap_angles_x, self.conv_fun, mode='valid')
         #angles_y = np.convolve(wrap_angles_y, self.conv_fun, mode='valid')
         for i in range(self.nodes_num):
@@ -247,36 +250,94 @@ class model2d:
             self.angles_y[i] = np.convolve(wrap_angles_y[i], self.conv_fun, mode='valid')
 
         l_slopes_x = np.tan(self.angles_x)
-        l_slopes_y = np.tan(self.angles_y)
+        l_slopes_y = np.tan(self.angles_y.T)
 
         thetas = np.arccos(1/np.sqrt(np.power(l_slopes_x, 2) + np.power(l_slopes_y, 2) + 1))
-        #print(thetas)
-
-        if False:
-            print(np.degrees(thetas))
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
-
-            ax.plot_surface(self.X, self.Y, thetas, cmap=cm.coolwarm, linewidth=0, antialiased=False)
-            plt.show()
-
 
         self.Z -= self.erosion * yamamura(thetas,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.3,(self.nodes_num, self.nodes_num))) #*self.beam_gauss
         #self.Z -= self.erosion * yamamura(self.angles_y,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.3,(self.nodes_num, self.nodes_num))) #*self.beam_gauss
 
 
-        Z_pad = np.pad(self.Z, 1, 'wrap')
-        Z_pad[:, 0] += -self.slope_corr#-self.sample_slope*self.dx
+        # erosion
+        omegas = np.arctan2(l_slopes_y, l_slopes_x)
+        omegas = np.abs(omegas)
+        omegas[omegas >= np.pi*0.5] = np.pi - omegas[omegas >= np.pi*0.5]
 
-        Z_pad[:, -1] += self.slope_corr
+        x_back_mask = l_slopes_x > 0.0
+        x_for_mask = np.logical_not(x_back_mask)
 
-        x_diff = np.diff(Z_pad, 2, 1)[1:-1]
-        y_diff = np.diff(Z_pad, 2, 0)[:,1:-1]
+        y_back_mask = l_slopes_y > 0.0
+        y_for_mask = np.logical_not(y_back_mask)
 
-        self.Z += self.diffusion*(x_diff + y_diff)
+        ero_00 = (1.0-np.cos(4.0*thetas))*self.moment/np.power(self.dx, 3)
+        sin_omega = np.sin(omegas)
+        cos_omega = np.cos(omegas)
+
+        acc_00 = (1-sin_omega)*(1-cos_omega)*ero_00
+        acc_01 = cos_omega*(1-sin_omega)*ero_00
+        acc_10 = (1-cos_omega)*sin_omega*ero_00
+        acc_11 = sin_omega*cos_omega*ero_00
+
+        # lets roll
+        acc_01 = np.roll(x_for_mask*acc_01, (1, 0), axis=(1, 0)) \
+            + np.roll(x_back_mask*acc_01, (-1, 0), axis=(1,0))
+
+        acc_10 = np.roll(y_for_mask*acc_10, (0, 1), axis=(1,0)) \
+            + np.roll(y_back_mask*acc_10, (0, -1), axis=(1,0))
+
+        """
+        (-1, -1) | (-1, 0) | (-1, 1)
+        ----------------------------
+        (0, -1)  |         | (0, 1)
+        ----------------------------
+        (1, -1)  | (1, 0)  | (1, 1)
+        """
+
+        acc_11 = np.roll(np.logical_and(x_for_mask, y_for_mask)*acc_11, (1, 1), axis=(1,0)) \
+            + np.roll(np.logical_and(x_for_mask, y_back_mask)*acc_11, (1, -1), axis=(1,0)) \
+            + np.roll(np.logical_and(x_back_mask, y_back_mask)*acc_11, (-1, -1), axis=(1,0)) \
+            + np.roll(np.logical_and(x_back_mask, y_for_mask)*acc_11, (-1, 1), axis=(1,0))
+
+        summary = -ero_00+acc_00+acc_01+acc_10+acc_11
+        if look_up:
+            plt.imshow(self.Z)
+            plt.show()
+            plt.imshow(summary)
+            plt.show()
+
+        #print("{} {} {} {} {}".format(np.sum(summary), np.sum(acc_00), np.sum(acc_01), np.sum(acc_10), np.sum(acc_11)))
+        self.Z += summary
+        #self.y += self.moment*(np.cos(angles) - np.cos(np.roll(angles, 1)))
+        #moment = self.moment*(cos_res - np.roll(cos_res, 1))
+
+        if False:
+            print(np.degrees(omegas))
+            fig = plt.figure()
+            ax = fig.add_subplot(111, projection='3d')
+            ax.set_xlabel('X axis')
+            ax.set_ylabel('Y axis')
+
+            ax.plot_surface(self.X, self.Y, np.degrees(omegas), cmap=cm.coolwarm, linewidth=0, antialiased=False)
+            plt.show()
+
+        if True:
+            # ! new diffusion requied !
+            Z_pad = np.pad(self.Z, 1, 'wrap')
+            Z_pad[:, 0] += -self.slope_corr#-self.sample_slope*self.dx
+
+            Z_pad[:, -1] += self.slope_corr
+
+            x_diff = np.diff(Z_pad, 2, 1)[1:-1]
+            y_diff = np.diff(Z_pad, 2, 0)[:,1:-1]
+
+            self.Z += self.diffusion*(x_diff + y_diff)/np.power(self.dx, 2)
 
 
+    def add_sin(self, amp, nx, ny):
+        self.Z += amp*np.sin(2*np.pi*(nx*self.X/self.sample_len + ny*self.Y/self.sample_len))
 
+    def add_cos(self, amp, nx, ny):
+        self.Z += amp*np.cos(2*np.pi*(nx*self.X/self.sample_len + ny*self.Y/self.sample_len))
 
     def show(self):
         fig = plt.figure()
@@ -300,19 +361,12 @@ class model2d:
         X_ = np.squeeze(xyz_unstacked[0])
         Y_ = np.squeeze(xyz_unstacked[1])
         Z_ = np.squeeze(xyz_unstacked[2])
-        ax.plot_surface(X_, Y_ ,Z_ , cmap=cm.coolwarm, linewidth=0, antialiased=False)
-
-
-        plt.show()
         #plt.plot(self.X[0],self.Z[0])
         #plt.plot(self.X[0],self.X[0]*self.sample_slope+self.Z[0][0])
         wrap_len = 200
         look = np.pad(self.Z[0], (wrap_len), mode='wrap')
         look[:wrap_len] -= self.slope_corr
         look[-wrap_len:] += self.slope_corr
-        plt.plot(look)
-
-        plt.show()
 
     def show_history(self):
         fig = plt.figure()
@@ -337,18 +391,29 @@ class model2d:
             Z_ = np.squeeze(xyz_unstacked[2])
 
             #ax.plot_surface(self.X, self.Y, self.Z_history[int(val)], cmap=cm.coolwarm, linewidth=0, antialiased=False)
-            ax.plot_surface(X_, Y_,Z_, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+            ax.plot_surface(X_, Y_,Z_-np.mean(Z_), cmap=cm.coolwarm, linewidth=0, antialiased=False)
         slider.on_changed(update)
         plt.show()
 
 
-m2 = model2d(theta=67, diffusion=0.12, sample_len=300, nodes_num=300)
+m2 = model2d(theta=60, moment=1.3, erosion=0.2, diffusion=0.09, sample_len=300, nodes_num=400, conv_sigma=13)
+#m2.add_cos(80,0,2)
 #m2.show()
+#m2.add_cos(9.1,0,2)
+#m2.Z += np.random.normal(2, 0.9, m2.Z.shape)
+#m2.add_cos(1.5,0,3)
+#m2.add_sin(0.05,1,0)
+#m2.add_cos(0.8,0,1)
 #m2.show()
-for j in range(1):
-    for i in range(2000):
+
+#m2.show()
+import time
+for j in range(13):
+    t = time.time()
+    for i in range(100):
         m2.single_step()
-    #m2.show()
+    print(time.time()-t)
+#m2.show()
 m2.show_history()
 
 #m = model(theta=60, theta_opt=76, conv_sigma=50, erosion=0.1, moment=0.1, diffusion=0.3, sample_len=500, nodes_num=1000)
