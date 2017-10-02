@@ -221,6 +221,7 @@ class model2d:
         self.erosion = kwargs.get('erosion', 1.0)
         self.diffusion = kwargs.get('diffusion', 0.0001)
         self.moment = kwargs.get('moment', 1.0)
+        print(self.moment)
 
         self.conv_sigma = kwargs.get('conv_sigma', 10)
         self.conv_multi = kwargs.get('conv_multi', 2.0)
@@ -316,9 +317,16 @@ class model2d:
 
         summary = -ero_00+acc_00+acc_01+acc_10+acc_11
         if look_up:
-            plt.imshow(self.Z)
-            plt.show()
+            fig = plt.figure()
+            plt.subplot(221)
+            plt.imshow(np.degrees(thetas))
+            plt.subplot(222)
             plt.imshow(summary)
+
+            plt.subplot(223)
+            plt.imshow(l_slopes_x)
+            plt.subplot(224)
+            plt.imshow(l_slopes_y)
             plt.show()
 
         #print("{} {} {} {} {}".format(np.sum(summary), np.sum(acc_00), np.sum(acc_01), np.sum(acc_10), np.sum(acc_11)))
@@ -418,27 +426,66 @@ class model2d:
         slider.on_changed(update)
         plt.show()
 
+    def show_history_1d(self, aspect=1, rotate=True):
+        self.x_diag = np.linspace(0, np.sqrt(2)*self.sample_len, self.nodes_num, endpoint=False)
 
-m2 = model2d(theta=60, moment=0.7, erosion=0.9, diffusion=0.36, sample_len=200, nodes_num=200, conv_sigma=13)
-#m2.add_cos(80,0,2)
-#m2.show()
-#m2.add_cos(9.1,0,2)
-#m2.Z += np.random.normal(2, 0.9, m2.Z.shape)
-#m2.add_cos(1.5,0,3)
-#m2.add_sin(0.05,1,0)
-#m2.add_cos(0.8,0,1)
-#m2.show()
+        fig, ax = plt.subplots()
+        plt.subplots_adjust(bottom=0.25)
 
-#m2.show()
-#m2.show()
+        ax.set_aspect(aspect)
+
+        if rotate:
+            rtheta = self.theta
+        else:
+            rtheta = 0.0
+        rot_matrix = np.array([[np.cos(rtheta), - np.sin(rtheta)], [np.sin(rtheta), np.cos(rtheta)]])
+        xy = np.array([self.x_diag, self.Z_history[-1].diagonal()])
+        xy = np.dot(rot_matrix, xy)
+        xy[0] = xy[0] - np.mean(xy[0])
+        xy[1] = xy[1] - np.mean(xy[1])
+
+        plot, = ax.plot(xy[0], xy[1])
+
+        axslider = plt.axes([0.15, 0.1, 0.65, 0.05])
+        slider = Slider(axslider, 'Tmp', 0, len(self.Z_history)-1, valinit=1)
+
+
+        def update(val):
+            selection = self.Z_history[int(val)].diagonal()
+            xy = np.array([self.x_diag, selection])
+            xy = np.dot(rot_matrix, xy)
+            xy[0] = xy[0] - np.mean(xy[0])
+            xy[1] = xy[1] - np.mean(xy[1])
+
+            #plot.set_ydata(xy[1])
+            ax.clear()
+            ax.plot(xy[0], xy[1])
+
+        slider.on_changed(update)
+        plt.show()
+
+
+
+#m2 = model2d(theta=60, moment=0.00, erosion=0.04, diffusion=0.06, sample_len=200, nodes_num=200, conv_sigma=7)
+m2 = model2d(theta=60, moment=0.050, erosion=0.025, diffusion=0.225, sample_len=200, nodes_num=200, conv_sigma=10)
+
 import time
-for j in range(2):
+keep = int(input("keep:"))
+while keep != 0:
     t = time.time()
-    for i in range(1000):
+    for i in range(100):
         m2.single_step()
+    keep -= 1
     print(time.time()-t)
+
+    if keep == 0:
+        m2.show_history_1d(aspect=5)
+        m2.show_history_1d()
+        m2.show_history_1d(rotate=False)
+        m2.show_history()
+        m2.single_step(look_up=True)
+        keep = int(input("continue:"))
 #m2.show()
-m2.show_history()
 #m = model(theta=60, theta_opt=76, conv_sigma=50, erosion=0.1, moment=0.1, diffusion=0.3, sample_len=500, nodes_num=1000)
 #m.show_yam()
 #m.add_sin(2,2)
