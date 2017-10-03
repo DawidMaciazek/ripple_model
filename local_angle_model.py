@@ -15,6 +15,21 @@ def gauss2d(x, x0, xs, y, y0, ys):
     return np.exp(-( (np.power(x-x0,2)/(2*np.power(xs,2))) +
                         (np.power(y-y0,2)/(2*np.power(ys,2))) ))
 
+def rotation_matrix(r_vec, ra):
+    r_vec = np.array(r_vec)
+    r_vec = r_vec/np.linalg.norm(r_vec)
+    rmatrix = [[np.cos(ra) + r_vec[0]*r_vec[0]*(1-np.cos(ra)),
+                r_vec[0]*r_vec[1]*(1-np.cos(ra)) - r_vec[2]*np.sin(ra),
+                r_vec[0]*r_vec[2]*(1-np.cos(ra)) + r_vec[1]*np.sin(ra)],
+               [r_vec[1]*r_vec[0]*(1-np.cos(ra)) + r_vec[2]*np.sin(ra),
+                np.cos(ra) + r_vec[1]*r_vec[1]*(1-np.cos(ra)),
+                r_vec[1]*r_vec[2]*(1-np.cos(ra)) - r_vec[0]*np.sin(ra)],
+               [r_vec[2]*r_vec[0]*(1-np.cos(ra)) - r_vec[1]*np.sin(ra),
+                r_vec[2]*r_vec[1]*(1-np.cos(ra)) + r_vec[0]*np.sin(ra),
+                np.cos(ra) + r_vec[2]*r_vec[2]*(1-np.cos(ra))]]
+
+    return np.array(rmatrix)
+
 
 class model:
     def __init__(self, **kwargs):
@@ -234,6 +249,8 @@ class model2d:
         self.wrap_len = int(len(x_)/2)
         self.conv_fun = np.exp(-np.power(x_-conv_center, 2)/(2*np.power(self.conv_sigma, 2)))
         self.conv_fun = self.conv_fun/np.sum(self.conv_fun)
+        print(self.conv_fun)
+        print(np.sum(self.conv_fun))
         #plt.plot(self.conv_fun, 'r+')
         #plt.show()
 
@@ -271,7 +288,7 @@ class model2d:
 
         thetas = np.arccos(1/np.sqrt(np.power(l_slopes_x, 2) + np.power(l_slopes_y, 2) + 1))
 
-        self.Z -= self.erosion * yamamura(thetas,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.3,(self.nodes_num, self.nodes_num))) #*self.beam_gauss
+        self.Z -= np.power(self.dx, 2) * self.erosion * yamamura(thetas,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.3,(self.nodes_num, self.nodes_num))) #*self.beam_gauss
         #self.Z -= self.erosion * yamamura(self.angles_y,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.3,(self.nodes_num, self.nodes_num))) #*self.beam_gauss
 
 
@@ -318,14 +335,14 @@ class model2d:
         summary = -ero_00+acc_00+acc_01+acc_10+acc_11
         if look_up:
             fig = plt.figure()
-            plt.subplot(221)
+            plt.subplot(221).set_title("Thetas")
             plt.imshow(np.degrees(thetas))
-            plt.subplot(222)
+            plt.subplot(222).set_title("Moment_sum")
             plt.imshow(summary)
 
-            plt.subplot(223)
-            plt.imshow(l_slopes_x)
-            plt.subplot(224)
+            plt.subplot(223).set_title("Normalized Z")
+            plt.imshow(self.Z - self.X*self.sample_slope_xy - self.Y*self.sample_slope_xy)
+            plt.subplot(224).set_title("Slope y")
             plt.imshow(l_slopes_y)
             plt.show()
 
@@ -394,6 +411,7 @@ class model2d:
         look[-wrap_len:] += self.slope_corr
 
     def show_history(self):
+        self.name_str = "theta={}, sput={}, moment={}, diff={}, conv={}".format(np.degrees(self.theta), self.erosion, self.moment, self.diffusion, self.conv_sigma)
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
 
@@ -405,14 +423,11 @@ class model2d:
             ax.clear()
             ax.set_xlabel('X axis')
             ax.set_ylabel('Y axis')
-            ra = -np.arctan(self.sample_slope_xy)
-            rot_zero = np.array([[1,0,0], [0,1,0], [0,0,1]])
-            rot_matrix_y = np.array([[np.cos(ra), 0, np.sin(ra)], [0, 1, 0], [-np.sin(ra), 0, np.cos(ra)]])
-            rot_matrix_y = rot_zero
-            ra = -ra
-            rot_matrix_x = np.array([[1, 0, 0], [0, np.cos(ra), -np.sin(ra)], [0, np.sin(ra), np.cos(ra)]])
+            ax.set_title(self.name_str)
+            rot_matrix = rotation_matrix(np.array([-1,1,0], dtype=float), self.theta)
+
             xyz = np.stack((self.X, self.Y, self.Z_history[int(val)]), axis=-1)
-            xyz_rot = np.tensordot(xyz, rot_matrix_y, axes=([2], [0]))
+            xyz_rot = np.tensordot(xyz, rot_matrix, axes=([2], [0]))
             #xyz_rot = np.tensordot(xyz_rot, rot_matrix_x, axes=([2], [0]))
 
             xyz_unstacked = np.split(xyz_rot, 3, axis=-1)
@@ -422,7 +437,7 @@ class model2d:
             Z_ = np.squeeze(xyz_unstacked[2])
 
             #ax.plot_surface(self.X, self.Y, self.Z_history[int(val)], cmap=cm.coolwarm, linewidth=0, antialiased=False)
-            ax.plot_surface(X_, Y_,Z_-np.mean(Z_), cmap=cm.coolwarm, linewidth=0, antialiased=False)
+            ax.plot_surface(X_, Y_,Z_-np.mean(Z_), cmap=cm.afmhot, linewidth=0, antialiased=False)
         slider.on_changed(update)
         plt.show()
 
@@ -467,30 +482,25 @@ class model2d:
 
 
 #m2 = model2d(theta=60, moment=0.00, erosion=0.04, diffusion=0.06, sample_len=200, nodes_num=200, conv_sigma=7)
-m2 = model2d(theta=60, moment=0.050, erosion=0.025, diffusion=0.225, sample_len=200, nodes_num=200, conv_sigma=10)
+#m2 = model2d(theta=60, moment=0.050, erosion=0.025, diffusion=0.225, sample_len=200, nodes_num=200, conv_sigma=10)
+m2 = model2d(theta=60, moment=0.00, erosion=0.055, diffusion=0.225, sample_len=500, nodes_num=500, conv_sigma=7)
+#m2.add_cos(10,3,3)
+#m2.add_cos(10,3,-3)
 
 import time
-keep = int(input("keep:"))
-while keep != 0:
-    t = time.time()
-    for i in range(100):
-        m2.single_step()
-    keep -= 1
-    print(time.time()-t)
 
-    if keep == 0:
-        m2.show_history_1d(aspect=5)
-        m2.show_history_1d()
-        m2.show_history_1d(rotate=False)
-        m2.show_history()
-        m2.single_step(look_up=True)
-        keep = int(input("continue:"))
-#m2.show()
-#m = model(theta=60, theta_opt=76, conv_sigma=50, erosion=0.1, moment=0.1, diffusion=0.3, sample_len=500, nodes_num=1000)
-#m.show_yam()
-#m.add_sin(2,2)
-#m.add_sin(2,12)
-#m.run(10000)
-#m.show(rotate=True, aspect=5)
-#m.show(rotate=False, aspect=1)
-#m.show_rotated()
+run_next = int(input("continue:"))
+while run_next != 0:
+    for j in range(run_next):
+        t = time.time()
+        for i in range(10):
+            m2.single_step()
+        single_loop = time.time()-t
+        print("single: {} s \nelepse: {} s  ({} min)".format(single_loop, (run_next-j)*single_loop, (run_next-j)*single_loop/60.0))
+
+    m2.show_history_1d(aspect=5)
+    m2.show_history_1d()
+    m2.show_history()
+    m2.single_step(look_up=True)
+
+    run_next = int(input("continue:"))
