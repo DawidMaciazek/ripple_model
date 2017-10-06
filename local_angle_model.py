@@ -96,7 +96,7 @@ class model:
         #plt.show()
 
 
-        self.y -= self.erosion * yamamura(angles,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.3,self.nodes_num)) #*self.beam_gauss
+        self.y -= self.erosion * yamamura(angles,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.4,self.nodes_num)) #*self.beam_gauss
         #*np.roll(self.gauss_random, np.random.randint(self.nodes_num))h
         #plt.plot(yamamura(angles,self.theta_opt, self.f))
         #plt.show()
@@ -205,7 +205,9 @@ class model2d:
         self.xy_spacing = np.linspace(0, self.sample_len, self.nodes_num, endpoint=False)
         self.dx = self.xy_spacing[1]
         self.X = np.tile(self.xy_spacing, (self.nodes_num, 1))
+        self.x_center = self.X - self.sample_len*0.5
         self.Y = self.X.T
+        self.y_center = self.Y - self.sample_len*0.5
         self.Z = np.zeros((self.nodes_num, self.nodes_num), dtype=float)
 
         self.f = kwargs.get('f', 2.4)
@@ -217,6 +219,10 @@ class model2d:
 
         #self.Z += self.X*self.sample_slope
         self.Z += self.X*self.sample_slope_xy + self.Y*self.sample_slope_xy
+        # set ave Z on zero
+        self.Z -= np.average(self.Z)
+
+        self.slope_background = self.X*self.sample_slope_xy + self.Y*self.sample_slope_xy
 
         self.slope_corr = self.sample_len*self.sample_slope
 
@@ -235,6 +241,7 @@ class model2d:
 
         self.erosion = kwargs.get('erosion', 1.0)
         self.diffusion = kwargs.get('diffusion', 0.0001)
+        self.diff_cycles = kwargs.get('diff_cycles', 10)
         self.moment = kwargs.get('moment', 1.0)
         print(self.moment)
 
@@ -283,24 +290,24 @@ class model2d:
             self.angles_x[i] = np.convolve(wrap_angles_x[i], self.conv_fun, mode='valid')
             self.angles_y[i] = np.convolve(wrap_angles_y[i], self.conv_fun, mode='valid')
 
-        l_slopes_x = np.tan(self.angles_x)
-        l_slopes_y = np.tan(self.angles_y.T)
+        conv_slopes_x = np.tan(self.angles_x)
+        conv_slopes_y = np.tan(self.angles_y.T)
 
-        thetas = np.arccos(1/np.sqrt(np.power(l_slopes_x, 2) + np.power(l_slopes_y, 2) + 1))
+        thetas = np.arccos(1/np.sqrt(np.power(conv_slopes_x, 2) + np.power(conv_slopes_y, 2) + 1))
 
-        self.Z -= np.power(self.dx, 2) * self.erosion * yamamura(thetas,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.3,(self.nodes_num, self.nodes_num))) #*self.beam_gauss
+        self.Z -= np.power(self.dx, 2) * self.erosion * yamamura(thetas,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.5,(self.nodes_num, self.nodes_num))) #*self.beam_gauss
         #self.Z -= self.erosion * yamamura(self.angles_y,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.3,(self.nodes_num, self.nodes_num))) #*self.beam_gauss
 
 
         # erosion
-        omegas = np.arctan2(l_slopes_y, l_slopes_x)
+        omegas = np.arctan2(conv_slopes_y, conv_slopes_x)
         omegas = np.abs(omegas)
         omegas[omegas >= np.pi*0.5] = np.pi - omegas[omegas >= np.pi*0.5]
 
-        x_back_mask = l_slopes_x > 0.0
+        x_back_mask = conv_slopes_x > 0.0
         x_for_mask = np.logical_not(x_back_mask)
 
-        y_back_mask = l_slopes_y > 0.0
+        y_back_mask = conv_slopes_y > 0.0
         y_for_mask = np.logical_not(y_back_mask)
 
         ero_00 = (1.0-np.cos(4.0*thetas))*self.moment/np.power(self.dx, 3)
@@ -337,13 +344,15 @@ class model2d:
             fig = plt.figure()
             plt.subplot(221).set_title("Thetas")
             plt.imshow(np.degrees(thetas))
-            plt.subplot(222).set_title("Moment_sum")
-            plt.imshow(summary)
-
-            plt.subplot(223).set_title("Normalized Z")
+            plt.subplot(222).set_title("Normalized Z")
             plt.imshow(self.Z - self.X*self.sample_slope_xy - self.Y*self.sample_slope_xy)
-            plt.subplot(224).set_title("Slope y")
-            plt.imshow(l_slopes_y)
+            print(self.sample_slope_xy)
+            #plt.imshow(summary)
+
+            plt.subplot(223).set_title("Local Slope x")
+            plt.imshow(l_slopes_x)
+            plt.subplot(224).set_title("Conv Slope y")
+            plt.imshow(conv_slopes_x)
             plt.show()
 
         #print("{} {} {} {} {}".format(np.sum(summary), np.sum(acc_00), np.sum(acc_01), np.sum(acc_10), np.sum(acc_11)))
@@ -362,6 +371,24 @@ class model2d:
             plt.show()
 
         if True:
+            for i in range(self.diff_cycles):
+                node_angles_x = np.roll(l_angles_x, (1, 0), axis=(1, 0)) - l_angles_x
+                node_energy_x = np.tan((node_angles_x)/2.0)
+
+                forward_transport_x = np.roll(node_energy_x, (-1, 0), axis=(1, 0)) - node_energy_x
+                backward_transport_x = -np.roll(forward_transport_x, (1, 0), axis=(1, 0))
+
+
+                node_angles_y = np.roll(l_angles_y, (0, 1), axis=(1, 0)) - l_angles_y
+                node_energy_y = np.tan((node_angles_y)/2.0)
+
+                forward_transport_y = np.roll(node_energy_y, (0 -1), axis=(1, 0)) - node_energy_y
+                backward_transport_y = -np.roll(forward_transport_y, (0, 1), axis=(1, 0))
+
+                total_transport = forward_transport_x + backward_transport_x + forward_transport_y + backward_transport_y
+                self.Z += self.diffusion*total_transport
+
+        else:
             # ! new diffusion requied !
             Z_pad = np.pad(self.Z, 1, 'wrap')
 
@@ -425,8 +452,17 @@ class model2d:
             ax.set_ylabel('Y axis')
             ax.set_title(self.name_str)
             rot_matrix = rotation_matrix(np.array([-1,1,0], dtype=float), self.theta)
+            Z_ = self.Z_history[int(val)].copy()
+            eroded = -np.average(Z_)
+            Z_ += eroded
+            Z_ -= self.slope_background
 
-            xyz = np.stack((self.X, self.Y, self.Z_history[int(val)]), axis=-1)
+            roll_xy = int(np.round((np.sin(self.theta)*eroded/np.sqrt(2))/self.dx))
+            Z_ = np.roll(Z_, (roll_xy, roll_xy), axis=(1,0))
+            Z_ += self.slope_background
+
+            print("Eroded_sample: {} ()".format(np.cos(self.theta)*eroded, eroded))
+            xyz = np.stack((self.x_center, self.y_center, Z_), axis=-1)
             xyz_rot = np.tensordot(xyz, rot_matrix, axes=([2], [0]))
             #xyz_rot = np.tensordot(xyz_rot, rot_matrix_x, axes=([2], [0]))
 
@@ -442,7 +478,7 @@ class model2d:
         plt.show()
 
     def show_history_1d(self, aspect=1, rotate=True):
-        self.x_diag = np.linspace(0, np.sqrt(2)*self.sample_len, self.nodes_num, endpoint=False)
+        self.x_diag = np.linspace(0, np.sqrt(2)*self.sample_len, self.nodes_num, endpoint=False)-self.sample_len*0.5*np.sqrt(2)
 
         fig, ax = plt.subplots()
         plt.subplots_adjust(bottom=0.25)
@@ -466,15 +502,30 @@ class model2d:
 
 
         def update(val):
-            selection = self.Z_history[int(val)].diagonal()
-            xy = np.array([self.x_diag, selection])
-            xy = np.dot(rot_matrix, xy)
-            xy[0] = xy[0] - np.mean(xy[0])
-            xy[1] = xy[1] - np.mean(xy[1])
+            ax.clear()
+
+            z_ = self.Z_history[int(val)].diagonal().copy()
+            eroded = -np.average(z_)
+            print(eroded)
+            z_ += eroded
+            z_ -= self.slope_background.diagonal()
+
+
+            roll_xy = int(np.round((np.sin(self.theta)*eroded)/self.dx))
+            z_ = np.roll(z_, roll_xy)
+            z_ += self.slope_background.diagonal()
+
+            xz = np.array([self.x_diag, z_])
+            xz = np.dot(rot_matrix, xz)
+            x_ = xz[0]
+            z_ = xz[1]
+
+            ax.plot(x_, z_)
+            #y_ = np.roll(y_, -roll_xy)
 
             #plot.set_ydata(xy[1])
-            ax.clear()
-            ax.plot(xy[0], xy[1])
+            #ax.plot(self.x_diag, after_roll_back)
+            #ax.plot(self.x_diag, z_)
 
         slider.on_changed(update)
         plt.show()
@@ -483,8 +534,9 @@ class model2d:
 
 #m2 = model2d(theta=60, moment=0.00, erosion=0.04, diffusion=0.06, sample_len=200, nodes_num=200, conv_sigma=7)
 #m2 = model2d(theta=60, moment=0.050, erosion=0.025, diffusion=0.225, sample_len=200, nodes_num=200, conv_sigma=10)
-m2 = model2d(theta=60, moment=0.00, erosion=0.055, diffusion=0.225, sample_len=500, nodes_num=500, conv_sigma=7)
-#m2.add_cos(10,3,3)
+m2 = model2d(theta=0, moment=0.000, erosion=0.0145, diffusion=0.002, sample_len=100, nodes_num=100, conv_sigma=5)
+#m2.add_cos(10,4,0)
+#m2.add_cos(10,4,4)
 #m2.add_cos(10,3,-3)
 
 import time
@@ -498,7 +550,7 @@ while run_next != 0:
         single_loop = time.time()-t
         print("single: {} s \nelepse: {} s  ({} min)".format(single_loop, (run_next-j)*single_loop, (run_next-j)*single_loop/60.0))
 
-    m2.show_history_1d(aspect=5)
+    m2.show_history_1d(aspect=30)
     m2.show_history_1d()
     m2.show_history()
     m2.single_step(look_up=True)
