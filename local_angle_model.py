@@ -265,6 +265,7 @@ class model2d:
         self.angles_y = np.empty(self.Z.shape, dtype=float)
         self.Z_history = []
 
+
     def single_step(self, look_up=False):
         self.Z_history.append(self.Z.copy())
         l_z = np.pad(self.Z, ((0, 1), (0,1)), mode='wrap')
@@ -464,7 +465,6 @@ class model2d:
             print("Eroded_sample: {} ()".format(np.cos(self.theta)*eroded, eroded))
             xyz = np.stack((self.x_center, self.y_center, Z_), axis=-1)
             xyz_rot = np.tensordot(xyz, rot_matrix, axes=([2], [0]))
-            #xyz_rot = np.tensordot(xyz_rot, rot_matrix_x, axes=([2], [0]))
 
             xyz_unstacked = np.split(xyz_rot, 3, axis=-1)
 
@@ -530,11 +530,16 @@ class model2d:
         slider.on_changed(update)
         plt.show()
 
+    def show_yam(self):
+        plt.plot(np.linspace(0,90), yamamura(np.linspace(0, np.pi/2.0), self.theta_opt, self.f))
+        plt.show()
+
 
 
 #m2 = model2d(theta=60, moment=0.00, erosion=0.04, diffusion=0.06, sample_len=200, nodes_num=200, conv_sigma=7)
 #m2 = model2d(theta=60, moment=0.050, erosion=0.025, diffusion=0.225, sample_len=200, nodes_num=200, conv_sigma=10)
-m2 = model2d(theta=0, moment=0.000, erosion=0.0145, diffusion=0.002, sample_len=100, nodes_num=100, conv_sigma=5)
+m2 = model2d(theta=45, moment=0.03, erosion=0.07545, diffusion=0.006, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=20) #, f=0.3, theta_opt=10)
+m2.show_yam()
 #m2.add_cos(10,4,0)
 #m2.add_cos(10,4,4)
 #m2.add_cos(10,3,-3)

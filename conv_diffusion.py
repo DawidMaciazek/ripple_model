@@ -1,4 +1,5 @@
 import numpy as np
+import random
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 
@@ -42,6 +43,11 @@ class diff_model:
         self.y[sect_mid+sect_start:sect_mid*2+sect_start] += amp*np.linspace(1,0, sect_mid)
         self.y_history.append(self.y.copy())
 
+
+    def erosion_gauss(self, amp, sigma):
+        g = amp*np.exp(-np.power(self.x-self.sample_len/2.0, 2)/(2*np.power(sigma, 2)))
+        self.y -= np.roll(g, random.randint(0, self.nodes-1))
+
     def single_conv(self):
         #self.y += self.diff*(self.y-np.convolve(np.pad(self.y, (self.gauss_half, self.gauss_half), mode='wrap'), self.gauss, mode='valid'))
         self.y_history.append(self.y.copy())
@@ -71,6 +77,7 @@ class diff_model:
 
         # add angle correction
         self.y += self.diff * total_transport # / np.cos(l_angles)
+        self.y -= np.mean(self.y)
         self.y_history.append(self.y.copy())
 
     def single_normal(self):
@@ -104,19 +111,21 @@ class diff_model:
 
 
 rand = 0.05
-m = diff_model(nodes=100, sample_len=100,diff=0.01)
+m = diff_model(nodes=500, sample_len=500,diff=0.1)
 
-m.add_spike(1)
 cont = int(input("Cont:"))
+erosion = 0.1
 while cont:
-    for i in range(1000):
-        m.single_energy()
-        m.add_noise(rand)
-    print("tick-")
+    m.erosion_gauss(erosion, 3)
     cont -= 1
+    for i in range(20):
+        m.single_energy()
+
     if(cont == 0):
         m.show()
         cont = int(input("Cont:"))
+        erosion = 0.0
+
 
     #m.single_normal()
     #m.single_normal4()
