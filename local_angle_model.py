@@ -242,8 +242,9 @@ class model2d:
         self.erosion = kwargs.get('erosion', 1.0)
         self.diffusion = kwargs.get('diffusion', 0.0001)
         self.diff_cycles = kwargs.get('diff_cycles', 10)
+        self.diff_correction = kwargs.get("diff_correction", True)
+        print("diff_correction:{}".format(self.diff_correction))
         self.moment = kwargs.get('moment', 1.0)
-        print(self.moment)
 
         self.conv_sigma = kwargs.get('conv_sigma', 10)
         self.conv_multi = kwargs.get('conv_multi', 2.0)
@@ -294,7 +295,7 @@ class model2d:
         conv_slopes_x = np.tan(self.angles_x)
         conv_slopes_y = np.tan(self.angles_y.T)
 
-        thetas = np.arccos(1/np.sqrt(np.power(conv_slopes_x, 2) + np.power(conv_slopes_y, 2) + 1))
+        thetas = np.arccos(1.0/np.sqrt(np.power(conv_slopes_x, 2) + np.power(conv_slopes_y, 2) + 1.0))
 
         self.Z -= np.power(self.dx, 2) * self.erosion * yamamura(thetas,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.5,(self.nodes_num, self.nodes_num))) #*self.beam_gauss
         #self.Z -= self.erosion * yamamura(self.angles_y,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.3,(self.nodes_num, self.nodes_num))) #*self.beam_gauss
@@ -376,14 +377,21 @@ class model2d:
                 node_angles_x = np.roll(l_angles_x, (1, 0), axis=(1, 0)) - l_angles_x
                 node_energy_x = np.tan((node_angles_x)/2.0)
 
-                forward_transport_x = np.roll(node_energy_x, (-1, 0), axis=(1, 0)) - node_energy_x
+                if self.diff_correction:
+                    forward_transport_x = (np.roll(node_energy_x, (-1, 0), axis=(1, 0)) - node_energy_x)/np.cos(l_angles_x)
+                else:
+                    forward_transport_x = np.roll(node_energy_x, (-1, 0), axis=(1, 0)) - node_energy_x
+
                 backward_transport_x = -np.roll(forward_transport_x, (1, 0), axis=(1, 0))
 
 
                 node_angles_y = np.roll(l_angles_y, (0, 1), axis=(1, 0)) - l_angles_y
                 node_energy_y = np.tan((node_angles_y)/2.0)
 
-                forward_transport_y = np.roll(node_energy_y, (0 -1), axis=(1, 0)) - node_energy_y
+                if self.diff_correction:
+                    forward_transport_y = (np.roll(node_energy_y, (0 -1), axis=(1, 0)) - node_energy_y)/np.cos(l_angles_y)
+                else:
+                    forward_transport_y = np.roll(node_energy_y, (0 -1), axis=(1, 0)) - node_energy_y
                 backward_transport_y = -np.roll(forward_transport_y, (0, 1), axis=(1, 0))
 
                 total_transport = forward_transport_x + backward_transport_x + forward_transport_y + backward_transport_y
@@ -534,15 +542,44 @@ class model2d:
         plt.plot(np.linspace(0,90), yamamura(np.linspace(0, np.pi/2.0), self.theta_opt, self.f))
         plt.show()
 
+    def write_xyz(self, file_name):
+        ofile = open(file_name, 'w')
+        ofile.write("{}\n{}\n".format(self.nodes_num**2, self.nodes_num**2))
 
+        rot_matrix = rotation_matrix(np.array([-1,1,0], dtype=float), self.theta)
+        Z_ = self.Z_history[-1].copy()
+        eroded = -np.average(Z_)
+        Z_ += eroded
+        Z_ -= self.slope_background
+
+        roll_xy = int(np.round((np.sin(self.theta)*eroded/np.sqrt(2))/self.dx))
+        Z_ = np.roll(Z_, (roll_xy, roll_xy), axis=(1,0))
+        Z_ += self.slope_background
+
+        xyz = np.stack((self.x_center, self.y_center, Z_), axis=-1)
+        xyz_rot = np.tensordot(xyz, rot_matrix, axes=([2], [0]))
+        print(xyz_rot.shape)
+
+        for i in range(self.nodes_num):
+            for j in range(self.nodes_num):
+                ofile.write("H {} {} {}\n".format(xyz_rot[i][j][0], xyz_rot[i][j][1], xyz_rot[i][j][2]))
+
+        ofile.close()
+
+
+"""
+m2 = model2d(theta=30, moment=0.07, erosion=0.07, diffusion=0.01, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=10) #, f=0.3, theta_opt=10)
+ripples and holes
+"""
 
 #m2 = model2d(theta=60, moment=0.00, erosion=0.04, diffusion=0.06, sample_len=200, nodes_num=200, conv_sigma=7)
 #m2 = model2d(theta=60, moment=0.050, erosion=0.025, diffusion=0.225, sample_len=200, nodes_num=200, conv_sigma=10)
-m2 = model2d(theta=45, moment=0.03, erosion=0.07545, diffusion=0.006, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=20) #, f=0.3, theta_opt=10)
+m2 = model2d(theta=0, moment=0.01, erosion=0.003, diffusion=0.01, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=2, diff_correction=True) #, f=0.3, theta_opt=10)
 m2.show_yam()
 #m2.add_cos(10,4,0)
-#m2.add_cos(10,4,4)
-#m2.add_cos(10,3,-3)
+m2.add_sin(40,1,1)
+m2.add_sin(40,1,-1)
+
 
 import time
 
@@ -561,3 +598,4 @@ while run_next != 0:
     m2.single_step(look_up=True)
 
     run_next = int(input("continue:"))
+m2.write_xyz("/tmp/t.xyz")
