@@ -111,7 +111,8 @@ class diff_model:
 
 
 rand = 0.05
-m = diff_model(nodes=500, sample_len=500,diff=0.1)
+m = diff_model(nodes=100, sample_len=100,diff=0.1)
+m.add_spike(30)
 
 cont = int(input("Cont:"))
 erosion = 0.1

@@ -574,11 +574,8 @@ ripples and holes
 
 #m2 = model2d(theta=60, moment=0.00, erosion=0.04, diffusion=0.06, sample_len=200, nodes_num=200, conv_sigma=7)
 #m2 = model2d(theta=60, moment=0.050, erosion=0.025, diffusion=0.225, sample_len=200, nodes_num=200, conv_sigma=10)
-m2 = model2d(theta=0, moment=0.01, erosion=0.003, diffusion=0.01, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=2, diff_correction=True) #, f=0.3, theta_opt=10)
-m2.show_yam()
+m2 = model2d(theta=60, moment=0.00, erosion=0.003, diffusion=0.01, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=2, diff_correction=True) #, f=0.3, theta_opt=10)
 #m2.add_cos(10,4,0)
-m2.add_sin(40,1,1)
-m2.add_sin(40,1,-1)
 
 
 import time
