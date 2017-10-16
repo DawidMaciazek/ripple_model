@@ -577,7 +577,7 @@ class model2d:
 
         ofile.close()
 
-    def show_img(self, num, n=0, boundary=None):
+    def show_img(self, num, n=0, bin_step=2, r=2, boundary=None):
         X_, Y_, Z_ = self.leveled_xyz(self.Z_history[num], n)
         flat_ = [None, None, None]
         flat_[0] = X_.flatten()
@@ -587,8 +587,8 @@ class model2d:
         if boundary is None:
             boundary = np.array([[X_[-1,0], X_[0,-1]], [Y_[0,-1], Y_[-1,0]]], dtype=int)
 
-        bin_step = 3.0
-        r2 = np.power(5,2)
+        bin_step = 2.0
+        r2 = np.power(r,2)
         bin_centers = [np.arange(boundary[0,0], boundary[0,1]+0.1, bin_step),
                                 np.arange(boundary[1,0], boundary[1,1]+0.1, bin_step)]
 
@@ -605,25 +605,20 @@ class model2d:
             ix = indexes[0][i]
             iy = indexes[1][i]
             cr_z = flat_[2][i]
-            if(Z_holder[ix,iy,0,2] < cr_z):
-                Z_holder[ix,iy,2] = Z_holder[ix,iy,1]
-                Z_holder[ix,iy,1] = Z_holder[ix,iy,0]
-                Z_holder[ix,iy,0] = [flat_[0][i], flat_[1][i], cr_z]
+            if(Z_holder[iy,ix,0,2] < cr_z):
+                Z_holder[iy,ix,2] = Z_holder[iy,ix,1]
+                Z_holder[iy,ix,1] = Z_holder[iy,ix,0]
+                Z_holder[iy,ix,0] = [flat_[0][i], flat_[1][i], cr_z]
 
-            elif(Z_holder[ix,iy,1,2] < cr_z):
-                Z_holder[ix,iy,2] = Z_holder[ix,iy,1]
-                Z_holder[ix,iy,1] = [flat_[0][i], flat_[1][i], cr_z]
+            elif(Z_holder[iy,ix,1,2] < cr_z):
+                Z_holder[iy,ix,2] = Z_holder[iy,ix,1]
+                Z_holder[iy,ix,1] = [flat_[0][i], flat_[1][i], cr_z]
 
-            elif(Z_holder[ix,iy,2,2] < cr_z):
-                Z_holder[ix,iy,2] = [flat_[0][i], flat_[1][i], cr_z]
+            elif(Z_holder[iy,ix,2,2] < cr_z):
+                Z_holder[iy,ix,2] = [flat_[0][i], flat_[1][i], cr_z]
 
-            #img[ = max(Z_img[indexes[0][i]][indexes[1][i]], )
-            #Z_img[indexes[0][i]][indexes[1][i]] = max(Z_img[indexes[0][i]][indexes[1][i]], flat_[2][i])
 
-        # skip edges
-        #bin_centers[0] = bin_centers[0][1:-1]
-        #bin_centers[1] = bin_centers[1][1:-1]
-
+        # discard edges
         Z_holder = Z_holder[1:-1, 1:-1, :, :]
         Z_full_holder = np.empty( (Z_holder.shape[0], Z_holder.shape[1], 3*9, 3) )
 
@@ -632,30 +627,23 @@ class model2d:
             Z_full_holder[:,:,n_*3:(n_+1)*3] = np.roll(Z_holder, (roll_[0], roll_[1]), axis=(0,1))
         Z_full_holder = Z_full_holder[1:-1, 1:-1, :, :]
 
-        #
-
         bin_centers[0] = bin_centers[0][2:-2]
         bin_centers[1] = bin_centers[1][2:-2]
 
         probe = np.stack(np.meshgrid(bin_centers[0], bin_centers[1]), -1)
         probe = np.append(probe, np.zeros((probe.shape[0], probe.shape[1], 1)), axis=2)
         probe = np.tile(probe, 27).reshape(probe.shape[0], probe.shape[1], 27, 3)
-        print(Z_full_holder[8,5,:,:])
 
         probe_diff = Z_full_holder - probe
         probe_height = np.sqrt(r2 - (np.power(probe_diff[:,:,:,0],2) + np.power(probe_diff[:,:,:,1],2)))
         probe_z = Z_full_holder[:,:,:,2] + probe_height
-        print(probe_z[8,5,:])
 
         probe_z[np.isnan(probe_z)] = -1000
         probe_z = np.amax(probe_z, -1)
-        # add 0
-        #probe = np.tile(probe, 27
 
+        probe_z[probe_z < -999] = 0.0
 
-        Z_img = 0#Z_img[1:-1,1:-1]
-        Z_img[Z_img < -9999] = 0.0
-        plt.imshow(Z_img, cmap=cm.afmhot)
+        plt.imshow(probe_z, cmap=cm.afmhot)
         plt.show()
 
         #indexed_si = np.digitize(self.start_all_z_list[0]- self.ave_surf, self.dp_bin_edges)
@@ -669,7 +657,7 @@ ripples and holes
 
 #m2 = model2d(theta=60, moment=0.00, erosion=0.04, diffusion=0.06, sample_len=200, nodes_num=200, conv_sigma=7)
 #m2 = model2d(theta=60, moment=0.050, erosion=0.025, diffusion=0.225, sample_len=200, nodes_num=200, conv_sigma=10)
-m2 = model2d(theta=80, moment=0.01, erosion=0.003, diffusion=0.02, sample_len=200, nodes_num=200, conv_sigma=0.3, diff_cycles=2, diff_correction=True) #, f=0.3, theta_opt=10)
+m2 = model2d(theta=60, moment=0.01, erosion=0.003, diffusion=0.02, sample_len=200, nodes_num=200, conv_sigma=0.3, diff_cycles=2, diff_correction=True) #, f=0.3, theta_opt=10)
 #m2.add_cos(10,4,0)
 
 
@@ -690,7 +678,7 @@ while run_next != 0:
     #m2.single_step(look_up=True)
 
     num = int(input("1: {}\nnum:".format(len(m2.Z_history))))
-    m2.show_img(num, 1)
+    m2.show_img(num, bin_step=2, r=2.5, n=1)
 
     run_next = int(input("continue:"))
 #m2.write_xyz("/tmp/t.xyz")
