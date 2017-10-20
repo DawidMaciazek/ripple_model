@@ -275,11 +275,13 @@ class model2d:
         print("Eroded_sample: {} ({})".format(np.cos(self.theta)*z_eroded, z_eroded))
 
         roll_xy = int(np.round((np.sin(self.theta)*z_eroded/np.sqrt(2))/self.dx))
+        roll_xy_rest = (np.sin(self.theta)*z_eroded/np.sqrt(2))/self.dx - np.round((np.sin(self.theta)*z_eroded/np.sqrt(2))/self.dx)
+        print("Roll: {}\nRoll rest: {}".format(roll_xy, roll_xy_rest))
         Z_normalized = Z_ - (self.slope_background - np.mean(self.slope_background)) - z_mean
         Z_normalized = np.roll(Z_normalized, (roll_xy, roll_xy), axis=(0,1))
         Z_normalized = np.pad(Z_normalized, (0, self.nodes_num*n), mode='wrap')
 
-        xy_spacing = np.linspace(0, self.sample_len*(n+1), self.nodes_num*(n+1), endpoint=False) - self.sample_len*0.5*(n+1)
+        xy_spacing = np.linspace(0, self.sample_len*(n+1), self.nodes_num*(n+1), endpoint=False) - self.sample_len*0.5*(n+1) + roll_xy_rest
         x_center = np.tile(xy_spacing, (self.nodes_num*(n+1), 1))
         print("Xcenter:{}".format(np.mean(x_center)))
         y_center = x_center.T
@@ -581,6 +583,31 @@ class model2d:
 
         ofile.close()
 
+    def get_img_boundary(self, X_, Y_, Z_):
+        # 1 calc pane
+        a = [None, None, None, None]
+        b = [None, None, None, None]
+
+        # slope = (y2-y1)/(x2-y1); b = y2 - x2*slope
+        # corener array
+        c_arr = ((0,0), (0,-1), (-1, -1), (-1, 0))
+        for i in range(len(c_arr)):
+            cid1, cid2 = c_arr[i-1]
+            tid1, tid2 = c_arr[i]
+
+            a[i] = (Y_[tid1, tid2]- Y_[cid1, cid2])/(X_[tid1, tid2] - X_[cid1, cid2])
+            b[i] = Y_[tid1, tid2] - X_[tid1, tid2]*a[i]
+        # check if a[0] ~ a[2] and a[1] ~ a[3]
+        #a = [(a[0]+a[2])/2.0, (a[1]+a[3])/2.0]
+        a = -1*np.around(np.array(a), 5)
+        b = -1*np.around(np.array(b), 5)
+
+        eq_left = np.array([[1-a[0], -1, 0, 1], [-a[1],0, 0, 1], [0, -a[0], 0, 1], [0, -a[1], 1, 0]], dtype=float)
+        eq_right = np.array(b, dtype=float)
+        x1, x2, y1, y2 = np.linalg.solve(eq_left, eq_right)
+        boundary = np.round([[x1, x2], [y1, y2]])
+        return boundary
+
     def show_img(self, num, bin_step=1, r=5, bin_rep=3, cell_rep=1, show=True, boundary=None):
         # bin_rep: 1, 2, 3, ....
         print("DISPL NUM::{}".format(num))
@@ -591,29 +618,7 @@ class model2d:
         flat_[2] = Z_.flatten()
 
         if boundary is None:
-            #boundary = np.array([[X_[-1,0], X_[0,-1]], [Y_[0,-1], Y_[-1,0]]], dtype=int)
-            # 1 calc pane
-            a = [None, None, None, None]
-            b = [None, None, None, None]
-
-            # slope = (y2-y1)/(x2-y1); b = y2 - x2*slope
-            # corener array
-            c_arr = ((0,0), (0,-1), (-1, -1), (-1, 0))
-            for i in range(len(c_arr)):
-                cid1, cid2 = c_arr[i-1]
-                tid1, tid2 = c_arr[i]
-
-                a[i] = (Y_[tid1, tid2]- Y_[cid1, cid2])/(X_[tid1, tid2] - X_[cid1, cid2])
-                b[i] = Y_[tid1, tid2] - X_[tid1, tid2]*a[i]
-            # check if a[0] ~ a[2] and a[1] ~ a[3]
-            #a = [(a[0]+a[2])/2.0, (a[1]+a[3])/2.0]
-            a = -1*np.around(np.array(a), 5)
-            b = -1*np.around(np.array(b), 5)
-
-            eq_left = np.array([[1-a[0], -1, 0, 1], [-a[1],0, 0, 1], [0, -a[0], 0, 1], [0, -a[1], 1, 0]], dtype=float)
-            eq_right = np.array(b, dtype=float)
-            x1, x2, y1, y2 = np.linalg.solve(eq_left, eq_right)
-            boundary = np.round([[x1, x2], [y1, y2]])
+            boundary = self.get_img_boundary(X_, Y_, Z_)
 
         r2 = np.power(r,2)
         bin_centers = [np.arange(boundary[0,0], boundary[0,1]+0.001, bin_step),
@@ -674,7 +679,9 @@ class model2d:
         probe_z[probe_z < -999] = 0.0
 
         if show:
-            plt.imshow(probe_z, cmap=cm.afmhot)
+            #plt.imshow(probe_z, cmap=cm.afmhot)
+            plt.gray()
+            plt.imshow(probe_z) #, cmap=cm.afmhot)
             plt.show()
         else:
             return probe_z
@@ -682,13 +689,18 @@ class model2d:
         #indexed_si = np.digitize(self.start_all_z_list[0]- self.ave_surf, self.dp_bin_edges)
         #[np.linspace(boundary[0,0], boundary[0,1], 1.0)
 
-    def write_img(self, out_dir, period=10, bin_step=1, r=5, bin_rep=3, cell_rep=1):
-        print("{}, {}, {}".format(0, len(self.Z_history)-1, period))
+    def write_img(self, out_dir, period=10, bin_step=1, r=5, bin_rep=3, cell_rep=1, boundary=None):
+        if boundary is None:
+            eX_, eY_, eZ_ = self.leveled_xyz(self.Z_history[-1], cell_rep)
+            boundary = self.get_img_boundary(eX_, eY_, eZ_)
 
+        print("{}, {}, {}".format(0, len(self.Z_history)-1, period))
         for i in range(0, len(self.Z_history)-1, period):
-            data = self.show_img(i, bin_step=bin_step, r=r, bin_rep=bin_rep, cell_rep=cell_rep, show=False)
+
+            data = self.show_img(i, bin_step=bin_step, r=r, bin_rep=bin_rep, cell_rep=cell_rep, boundary=boundary, show=False)
             name = "rip.{}.png".format(str(int(i/period)).zfill(5))
-            plt.imsave("{}/{}".format(out_dir,name), data, cmap=cm.afmhot)
+            plt.gray()
+            plt.imsave("{}/{}".format(out_dir,name), data)#, cmap=cm.afmhot)
 
 
 """
@@ -698,7 +710,9 @@ ripples and holes
 
 #m2 = model2d(theta=60, moment=0.00, erosion=0.04, diffusion=0.06, sample_len=200, nodes_num=200, conv_sigma=7)
 #m2 = model2d(theta=60, moment=0.050, erosion=0.025, diffusion=0.225, sample_len=200, nodes_num=200, conv_sigma=10)
-m2 = model2d(theta=60, moment=0.04, erosion=0.009, diffusion=0.02, sample_len=200, nodes_num=200, conv_sigma=0.3, diff_cycles=4, diff_correction=True) #, f=0.3, theta_opt=10)
+#m2 = model2d(theta=30, moment=0.04, erosion=0.009, diffusion=0.02, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=4, diff_correction=True) #, f=0.3, theta_opt=10)
+#m2 = model2d(theta=60, moment=0.04, erosion=0.018, diffusion=0.02, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=4, diff_correction=True) #, f=0.3, theta_opt=10)
+m2 = model2d(theta=55, moment=0.02, erosion=0.01, diffusion=0.03, sample_len=200, nodes_num=200, conv_sigma=0.3, diff_cycles=5, diff_correction=True) #, f=0.3, theta_opt=10)
 
 import time
 
@@ -712,19 +726,13 @@ while run_next != 0:
         print("single: {} s \nelepse: {} s  ({} min)".format(single_loop, (run_next-j)*single_loop, (run_next-j)*single_loop/60.0))
 
     m2.show_history_1d(aspect=30)
+    m2.show_history_1d(aspect=5)
+    m2.show_history_1d(aspect=1)
     #m2.show_history_1d()
     m2.show_history(n=1)
     #m2.single_step(look_up=True)
-    run_next=False
     #num = int(input("1: {}\nnum:".format(len(m2.Z_history))))
     #m2.write_xyz("/tmp/t.xyz")
-    #m2.show_img(num, bin_step=1, r=5, bin_rep=3, cell_rep=1)
-    #run_next = int(input("continue:"))
-
-m2.write_img("/tmp/imgg")
-print("TESTING IMAGE PROCEDURE:")
-while False:
-    if num == 0:
-        break
-
-
+    m2.show_img(len(m2.Z_history)-1) #, bin_step=1, r=5, bin_rep=3, cell_rep=1)
+    run_next = int(input("continue:"))
+m2.write_img("/tmp/playground",period=100, r=9 )
