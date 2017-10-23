@@ -411,6 +411,15 @@ class model2d:
 
         if True:
             for i in range(self.diff_cycles):
+                l_z = np.pad(self.Z, ((0, 1), (0,1)), mode='wrap')
+                l_z += self.slope_corr_diff1
+
+                l_slopes_x = np.diff(l_z, 1, axis=1)[:-1]/self.dx
+                l_slopes_y = np.diff(l_z, 1, axis=0)[:,:-1]/self.dx
+
+                l_angles_x = np.arctan(l_slopes_x)
+                l_angles_y = np.arctan(l_slopes_y)
+
                 node_angles_x = np.roll(l_angles_x, (1, 0), axis=(1, 0)) - l_angles_x
                 node_energy_x = np.tan((node_angles_x)/2.0)
 
@@ -433,6 +442,7 @@ class model2d:
 
                 total_transport = forward_transport_x + backward_transport_x + forward_transport_y + backward_transport_y
                 self.Z += self.diffusion*total_transport
+                self.Z_history.append(self.Z.copy())
 
         else:
             # ! new diffusion requied !
@@ -712,7 +722,8 @@ ripples and holes
 #m2 = model2d(theta=60, moment=0.050, erosion=0.025, diffusion=0.225, sample_len=200, nodes_num=200, conv_sigma=10)
 #m2 = model2d(theta=30, moment=0.04, erosion=0.009, diffusion=0.02, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=4, diff_correction=True) #, f=0.3, theta_opt=10)
 #m2 = model2d(theta=60, moment=0.04, erosion=0.018, diffusion=0.02, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=4, diff_correction=True) #, f=0.3, theta_opt=10)
-m2 = model2d(theta=55, moment=0.02, erosion=0.01, diffusion=0.03, sample_len=200, nodes_num=200, conv_sigma=0.3, diff_cycles=5, diff_correction=True) #, f=0.3, theta_opt=10)
+m2 = model2d(theta=45, moment=0.20, erosion=0.50, diffusion=0.03, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=30, diff_correction=True) #, f=0.3, theta_opt=10)
+m2.add_sin(2,2,2)
 
 import time
 
@@ -735,4 +746,4 @@ while run_next != 0:
     #m2.write_xyz("/tmp/t.xyz")
     m2.show_img(len(m2.Z_history)-1) #, bin_step=1, r=5, bin_rep=3, cell_rep=1)
     run_next = int(input("continue:"))
-m2.write_img("/tmp/playground",period=100, r=9 )
+#m2.write_img("/tmp/playground",period=100, r=9 )
