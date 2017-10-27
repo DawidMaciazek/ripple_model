@@ -12,6 +12,7 @@ warnings.filterwarnings('ignore')
 
 def yamamura(theta, theta_opt, f):
     return np.power(np.cos(theta), -f)*np.exp(f * (1-np.power(np.cos(theta), -1)) * np.cos(theta_opt)  )
+    #return np.power(np.cos(theta), 0.7)
 
 def gauss2d(x, x0, xs, y, y0, ys):
     return np.exp(-( (np.power(x-x0,2)/(2*np.power(xs,2))) +
@@ -96,9 +97,9 @@ class model:
         angles = np.convolve(wrap_angles, self.conv_fun, mode='valid')
         #plt.plot(np.degrees(angles))
         #plt.show()
+        beam_randomness = np.abs(np.random.normal(1,0.4,self.nodes_num))
 
-
-        self.y -= self.erosion * yamamura(angles,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.4,self.nodes_num)) #*self.beam_gauss
+        self.y -= self.erosion * yamamura(angles,self.theta_opt, self.f)*beam_randomness
         #*np.roll(self.gauss_random, np.random.randint(self.nodes_num))h
         #plt.plot(yamamura(angles,self.theta_opt, self.f))
         #plt.show()
@@ -242,6 +243,7 @@ class model2d:
         self.theta_opt = kwargs.get('theta_opt', 74.0)
         self.theta_opt = np.radians(self.theta_opt)
 
+        self.noise = kwargs.get('noise', 0.5)
         self.erosion = kwargs.get('erosion', 1.0)
         self.diffusion = kwargs.get('diffusion', 0.0001)
         self.diff_cycles = kwargs.get('diff_cycles', 10)
@@ -334,7 +336,8 @@ class model2d:
 
         thetas = np.arccos(1.0/np.sqrt(np.power(conv_slopes_x, 2) + np.power(conv_slopes_y, 2) + 1.0))
 
-        self.Z -= np.power(self.dx, 2) * self.erosion * yamamura(thetas,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.5,(self.nodes_num, self.nodes_num))) #*self.beam_gauss
+        beam_randomness = np.abs(np.random.normal(1,self.noise,(self.nodes_num, self.nodes_num)))
+        self.Z -= np.power(self.dx, 2) * self.erosion * yamamura(thetas,self.theta_opt, self.f)*beam_randomness #*self.beam_gauss
         #self.Z -= self.erosion * yamamura(self.angles_y,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.3,(self.nodes_num, self.nodes_num))) #*self.beam_gauss
 
 
@@ -395,7 +398,7 @@ class model2d:
             plt.show()
 
         #print("{} {} {} {} {}".format(np.sum(summary), np.sum(acc_00), np.sum(acc_01), np.sum(acc_10), np.sum(acc_11)))
-        self.Z += summary
+        self.Z += summary*beam_randomness
         #self.y += self.moment*(np.cos(angles) - np.cos(np.roll(angles, 1)))
         #moment = self.moment*(cos_res - np.roll(cos_res, 1))
 
@@ -442,7 +445,6 @@ class model2d:
 
                 total_transport = forward_transport_x + backward_transport_x + forward_transport_y + backward_transport_y
                 self.Z += self.diffusion*total_transport
-                self.Z_history.append(self.Z.copy())
 
         else:
             # ! new diffusion requied !
@@ -712,6 +714,11 @@ class model2d:
             plt.gray()
             plt.imsave("{}/{}".format(out_dir,name), data)#, cmap=cm.afmhot)
 
+    def show_yam(self):
+        plt.plot(np.linspace(0,90), yamamura(np.linspace(0, np.pi/2.0), self.theta_opt, self.f))
+        plt.show()
+
+
 
 """
 m2 = model2d(theta=30, moment=0.07, erosion=0.07, diffusion=0.01, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=10) #, f=0.3, theta_opt=10)
@@ -722,8 +729,8 @@ ripples and holes
 #m2 = model2d(theta=60, moment=0.050, erosion=0.025, diffusion=0.225, sample_len=200, nodes_num=200, conv_sigma=10)
 #m2 = model2d(theta=30, moment=0.04, erosion=0.009, diffusion=0.02, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=4, diff_correction=True) #, f=0.3, theta_opt=10)
 #m2 = model2d(theta=60, moment=0.04, erosion=0.018, diffusion=0.02, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=4, diff_correction=True) #, f=0.3, theta_opt=10)
-m2 = model2d(theta=45, moment=0.20, erosion=0.50, diffusion=0.03, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=30, diff_correction=True) #, f=0.3, theta_opt=10)
-m2.add_sin(2,2,2)
+m2 = model2d(theta=45, moment=0.0, erosion=0.24, diffusion=0.031, sample_len=200, nodes_num=200, conv_sigma=0.3, diff_cycles=5, diff_correction=True, f=2.2, theta_opt=70, noise=0.9) #, f=2.2, theta_opt=82) #, f=0.3, theta_opt=10)
+m2.show_yam()
 
 import time
 
@@ -746,4 +753,6 @@ while run_next != 0:
     #m2.write_xyz("/tmp/t.xyz")
     m2.show_img(len(m2.Z_history)-1) #, bin_step=1, r=5, bin_rep=3, cell_rep=1)
     run_next = int(input("continue:"))
-#m2.write_img("/tmp/playground",period=100, r=9 )
+
+per=int(input("You have {} frames now, choose period:".format(len(m2.Z_history))))
+m2.write_img("/tmp/playground2",period=per, r=9, bin_rep=4)
