@@ -114,6 +114,8 @@ rand = 0.05
 m = diff_model(nodes=100, sample_len=100,diff=0.1)
 m.add_spike(30)
 
+#node_energy_x = 1.55/(1.0+np.exp((l_slopes_x)*51+1.7))
+
 cont = int(input("Cont:"))
 erosion = 0.1
 while cont:
