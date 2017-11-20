@@ -43,7 +43,6 @@ class diff_model:
         self.y[sect_mid+sect_start:sect_mid*2+sect_start] += amp*np.linspace(1,0, sect_mid)
         self.y_history.append(self.y.copy())
 
-
     def erosion_gauss(self, amp, sigma):
         g = amp*np.exp(-np.power(self.x-self.sample_len/2.0, 2)/(2*np.power(sigma, 2)))
         self.y -= np.roll(g, random.randint(0, self.nodes-1))
@@ -80,6 +79,21 @@ class diff_model:
         self.y -= np.mean(self.y)
         self.y_history.append(self.y.copy())
 
+    def single_mc(self):
+        diff = np.diff(np.pad(self.y, (1,1), mode='wrap'), 2)
+        const = 0.1
+
+        node_energy = 1.55/(1.0+np.exp((diff)*51+1.7))
+        diff_forward = np.roll(node_energy, -1) - node_energy
+        forward = np.exp(const*diff_forward) - np.exp(-const*diff_forward)
+        backward = -np.roll(forward, 1)
+        total = forward+backward
+        self.y_history.append(self.y.copy())
+        self.y += const*total
+        #node_energy_x = 1.55/(1.0+np.exp((l_slopes_x)*51+1.7))
+
+
+
     def single_normal(self):
         self.y_history.append(self.y.copy())
         self.y += self.diff*np.diff(np.pad(self.y, (1,1), mode='wrap'), 2)
@@ -113,13 +127,13 @@ class diff_model:
 rand = 0.05
 m = diff_model(nodes=100, sample_len=100,diff=0.1)
 m.add_spike(30)
+m.show()
 
-#node_energy_x = 1.55/(1.0+np.exp((l_slopes_x)*51+1.7))
 
 cont = int(input("Cont:"))
 erosion = 0.1
 while cont:
-    m.erosion_gauss(erosion, 3)
+    #m.erosion_gauss(erosion, 3)
     cont -= 1
     for i in range(20):
         m.single_energy()
