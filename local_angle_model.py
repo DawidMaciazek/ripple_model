@@ -316,40 +316,40 @@ class model2d:
         l_slopes_y = np.diff(l_z, 1, axis=0)[:,:-1]/self.dx
 
         l_angles_x = np.arctan(l_slopes_x)
-        #print(np.degrees(l_angles_x))
         l_angles_y = np.arctan(l_slopes_y)
-        #print(np.degrees(l_angles_y))
 
+        """
         wrap_angles_x = np.pad(l_angles_x, (self.wrap_len, self.wrap_len-1), mode='wrap')
-        #wrap_angles_x = np.zeros(wrap_angles_x.shape, dtype=float)
         # ! Transpose y before convolution (and after) !
         wrap_angles_y = np.pad(l_angles_y, (self.wrap_len, self.wrap_len-1), mode='wrap').T
-        #wrap_angles_y =np.zeros(wrap_angles_y.shape, dtype=float) #np.pad(l_angles_y, (self.wrap_len, self.wrap_len-1), mode='wrap').T
-        #angles_x = np.convolve(wrap_angles_x, self.conv_fun, mode='valid')
-        #angles_y = np.convolve(wrap_angles_y, self.conv_fun, mode='valid')
         for i in range(self.nodes_num):
             self.angles_x[i] = np.convolve(wrap_angles_x[i], self.conv_fun, mode='valid')
             self.angles_y[i] = np.convolve(wrap_angles_y[i], self.conv_fun, mode='valid')
 
         conv_slopes_x = np.tan(self.angles_x)
         conv_slopes_y = np.tan(self.angles_y.T)
+        """
 
-        thetas = np.arccos(1.0/np.sqrt(np.power(conv_slopes_x, 2) + np.power(conv_slopes_y, 2) + 1.0))
+        angles_x = (np.roll(l_angles_x, 1, axis=1) + l_angles_x)*0.5
+        angles_y = (np.roll(l_angles_y, 1, axis=0) + l_angles_y)*0.5
+        slopes_x = np.tan(angles_x)
+        slopes_y = np.tan(angles_y)
 
+        thetas = np.arccos(1.0/np.sqrt(np.power(slopes_x, 2) + np.power(slopes_y, 2) + 1.0))
         beam_randomness = np.abs(np.random.normal(1,self.noise,(self.nodes_num, self.nodes_num)))
         self.Z -= np.power(self.dx, 2) * self.erosion * yamamura(thetas,self.theta_opt, self.f)*beam_randomness #*self.beam_gauss
         #self.Z -= self.erosion * yamamura(self.angles_y,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.3,(self.nodes_num, self.nodes_num))) #*self.beam_gauss
 
 
         # erosion
-        omegas = np.arctan2(conv_slopes_y, conv_slopes_x)
+        omegas = np.arctan2(slopes_y, slopes_x)
         omegas = np.abs(omegas)
         omegas[omegas >= np.pi*0.5] = np.pi - omegas[omegas >= np.pi*0.5]
 
-        x_back_mask = conv_slopes_x > 0.0
+        x_back_mask = slopes_x > 0.0
         x_for_mask = np.logical_not(x_back_mask)
 
-        y_back_mask = conv_slopes_y > 0.0
+        y_back_mask = slopes_y > 0.0
         y_for_mask = np.logical_not(y_back_mask)
 
         ero_00 = (1.0-np.cos(4.0*thetas))*self.moment/np.power(self.dx, 3)
@@ -412,7 +412,41 @@ class model2d:
             ax.plot_surface(self.X, self.Y, np.degrees(omegas), cmap=cm.coolwarm, linewidth=0, antialiased=False)
             plt.show()
 
-        if True:
+        if False:
+            # "kinetic montecarlo"
+            for i in range(self.diff_cycles):
+                Z_pad = np.pad(self.Z, 1, 'wrap')
+
+                Z_pad += self.slope_corr_diff2
+
+                x_diff = np.diff(Z_pad, 2, 1)[1:-1]
+                y_diff = np.diff(Z_pad, 2, 0)[:,1:-1]
+
+                node_energy_x = x_diff*-0.922 # x_diff*-0.922 # 1.55/(1.0+np.exp(x_diff*51+1.7))
+                node_energy_y = y_diff*-0.922 # 1.55/(1.0+np.exp(y_diff*51+1.7))
+                node_energy = node_energy_x + node_energy_y
+
+                energy_diff_x = np.roll(node_energy, -1, axis=1) - node_energy
+                energy_diff_y = np.roll(node_energy, -1, axis=0) - node_energy
+
+                forward_x = -np.exp(-self.diffusion*energy_diff_x)+np.exp(self.diffusion*energy_diff_x)
+                back_x = -np.roll(forward_x, 1, axis=1)
+                forward_y = -np.exp(-self.diffusion*energy_diff_y)+np.exp(self.diffusion*energy_diff_y)
+                back_y = -np.roll(forward_y, 1, axis=0)
+                plt.imshow(energy_diff_x)
+                plt.show()
+                plt.imshow(energy_diff_y)
+                plt.show()
+
+                total_transport = forward_x + forward_y + back_x + back_y
+                #plt.imshow(total_transport)
+                #plt.show()
+
+                #plt.imshow(self.Z)
+                #plt.show()
+                self.Z += total_transport
+        else:
+            # phenomenical
             for i in range(self.diff_cycles):
                 l_z = np.pad(self.Z, ((0, 1), (0,1)), mode='wrap')
                 l_z += self.slope_corr_diff1
@@ -423,30 +457,26 @@ class model2d:
                 l_angles_x = np.arctan(l_slopes_x)
                 l_angles_y = np.arctan(l_slopes_y)
 
+                # /\ 180, \/ -180
                 node_angles_x = np.roll(l_angles_x, (1, 0), axis=(1, 0)) - l_angles_x
-                node_energy_x = np.tan((node_angles_x)/2.0)
-
-                if self.diff_correction:
-                    forward_transport_x = (np.roll(node_energy_x, (-1, 0), axis=(1, 0)) - node_energy_x)/np.cos(l_angles_x)
-                else:
-                    forward_transport_x = np.roll(node_energy_x, (-1, 0), axis=(1, 0)) - node_energy_x
-
-                backward_transport_x = -np.roll(forward_transport_x, (1, 0), axis=(1, 0))
-
-
                 node_angles_y = np.roll(l_angles_y, (0, 1), axis=(1, 0)) - l_angles_y
-                node_energy_y = np.tan((node_angles_y)/2.0)
+
+                node_energy = np.tan(node_angles_x*0.5) + np.tan(node_angles_y*0.5)
 
                 if self.diff_correction:
-                    forward_transport_y = (np.roll(node_energy_y, (0 -1), axis=(1, 0)) - node_energy_y)/np.cos(l_angles_y)
-                else:
-                    forward_transport_y = np.roll(node_energy_y, (0 -1), axis=(1, 0)) - node_energy_y
-                backward_transport_y = -np.roll(forward_transport_y, (0, 1), axis=(1, 0))
+                    # implement!
+                    forward_e_x = np.roll(node_energy, -1, axis=1) - node_energy
+                    forward_transport_x = (np.exp(self.diffusion*forward_e_x) - np.exp(-self.diffusion*forward_e_x))
+                    forward_e_y = np.roll(node_energy, -1, axis=0) - node_energy
+                    forward_transport_y = np.exp(self.diffusion*forward_e_y) - np.exp(-self.diffusion*forward_e_y)
+
+                backward_transport_x = -np.roll(forward_transport_x, 1, axis=1)
+                backward_transport_y = -np.roll(forward_transport_y, 1, axis=0)
 
                 total_transport = forward_transport_x + backward_transport_x + forward_transport_y + backward_transport_y
                 self.Z += self.diffusion*total_transport
 
-        else:
+        """
             # ! new diffusion requied !
             Z_pad = np.pad(self.Z, 1, 'wrap')
 
@@ -458,12 +488,22 @@ class model2d:
             y_diff = np.diff(Z_pad, 2, 0)[:,1:-1]
 
             self.Z += self.diffusion*(x_diff + y_diff)/np.power(self.dx, 2)
+        """
 
     def add_sin(self, amp, nx, ny):
         self.Z += amp*np.sin(2*np.pi*(nx*self.X/self.sample_len + ny*self.Y/self.sample_len))
 
     def add_cos(self, amp, nx, ny):
         self.Z += amp*np.cos(2*np.pi*(nx*self.X/self.sample_len + ny*self.Y/self.sample_len))
+
+    def add_pilar(self, amp, x0, y0, ratio=0.1):
+        r = self.sample_len*ratio
+        a = -amp/np.power(r,2)
+
+        pilar = a*(np.power(self.X-x0,2) + np.power(self.Y-y0, 2))+amp
+        pilar[pilar<0.0] = 0.0
+        self.Z += pilar
+        self.Z_history.append(self.Z)
 
     def show(self):
         fig = plt.figure()
@@ -718,6 +758,43 @@ class model2d:
         plt.plot(np.linspace(0,90), yamamura(np.linspace(0, np.pi/2.0), self.theta_opt, self.f))
         plt.show()
 
+    def show_color(self):
+        l_z = np.pad(self.Z, ((0, 1), (0,1)), mode='wrap')
+        l_z += self.slope_corr_diff1
+        #l_z[:,-1] += self.slope_corr
+
+        l_slopes_x = np.diff(l_z, 1, axis=1)[:-1]/self.dx
+        l_slopes_y = np.diff(l_z, 1, axis=0)[:,:-1]/self.dx
+
+        l_angles_x = np.arctan(l_slopes_x)
+        l_angles_y = np.arctan(l_slopes_y)
+
+        angles_x = (np.roll(l_angles_x, 1, axis=1) + l_angles_x)*0.5
+        angles_y = (np.roll(l_angles_y, 1, axis=0) + l_angles_y)*0.5
+        slopes_x = np.tan(angles_x)
+        slopes_y = np.tan(angles_y)
+
+        thetas = np.arccos(1.0/np.sqrt(np.power(slopes_x, 2) + np.power(slopes_y, 2) + 1.0))
+        results = np.power(self.dx, 2) * self.erosion * yamamura(thetas,self.theta_opt, self.f) #*beam_randomness #*self.beam_gauss
+        #self.Z -= self.erosion * yamamura(self.angles_y,self.theta_opt, self.f)*np.abs(np.random.normal(1,0.3,(self.nodes_num, self.nodes_num))) #*self.beam_gauss
+        res_max = np.max(results)
+        res_min = np.min(results)
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        my_col = cm.afmhot((results-res_min)/(res_max-res_min))
+
+        surf = ax.plot_surface(self.X, self.Y, self.Z, facecolors = my_col) #, lrstride=1, cstride=1, inewidth=0)#,antialiased=False
+        plt.show()
+        f, (a1, a2, a3, a4) = plt.subplots(1,4)
+        a1.imshow(l_slopes_x)
+        a2.imshow(np.degrees(angles_x))
+        a3.imshow(np.degrees(thetas))
+        a4.imshow(results)
+        plt.show()
+
+
+
 
 
 """
@@ -729,7 +806,9 @@ ripples and holes
 #m2 = model2d(theta=60, moment=0.050, erosion=0.025, diffusion=0.225, sample_len=200, nodes_num=200, conv_sigma=10)
 #m2 = model2d(theta=30, moment=0.04, erosion=0.009, diffusion=0.02, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=4, diff_correction=True) #, f=0.3, theta_opt=10)
 #m2 = model2d(theta=60, moment=0.04, erosion=0.018, diffusion=0.02, sample_len=100, nodes_num=100, conv_sigma=0.3, diff_cycles=4, diff_correction=True) #, f=0.3, theta_opt=10)
-m2 = model2d(theta=45, moment=0.0, erosion=0.24, diffusion=0.031, sample_len=200, nodes_num=200, conv_sigma=0.3, diff_cycles=5, diff_correction=True, f=2.2, theta_opt=70, noise=0.9) #, f=2.2, theta_opt=82) #, f=0.3, theta_opt=10)
+m2 = model2d(theta=60, moment=0.2, erosion=0.3, diffusion=0.15, sample_len=200, nodes_num=200, diff_cycles=15, diff_correction=True) #, theta_opt=50)
+#m2.add_pilar(200, 100,100, ratio=0.3)
+m2.show_color()
 m2.show_yam()
 
 import time
@@ -743,7 +822,7 @@ while run_next != 0:
         single_loop = time.time()-t
         print("single: {} s \nelepse: {} s  ({} min)".format(single_loop, (run_next-j)*single_loop, (run_next-j)*single_loop/60.0))
 
-    m2.show_history_1d(aspect=30)
+    m2.show_color()
     m2.show_history_1d(aspect=5)
     m2.show_history_1d(aspect=1)
     #m2.show_history_1d()
