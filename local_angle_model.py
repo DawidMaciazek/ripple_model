@@ -2,12 +2,16 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 import itertools
+
+from matplotlib_scalebar.scalebar import ScaleBar
 from mpl_toolkits.mplot3d import axes3d
 from matplotlib.widgets import Slider
 from matplotlib import cm
+
 import pickle
 
-from scipy import interpolate
+from matplotlib.tri.triangulation import Triangulation
+from matplotlib.tri.triinterpolate import CubicTriInterpolator, LinearTriInterpolator
 
 import warnings
 warnings.filterwarnings('error')
@@ -93,6 +97,7 @@ class model2d:
     def __init__(self, **kwargs):
         self.sample_len = kwargs.get('sample_len', 100) # [ nm ]
         self.nodes_num = kwargs.get('nodes_num', 100)
+        self.img_dx = kwargs.get('img_dx', 1)
 
         self.xy_spacing = np.linspace(0, self.sample_len, self.nodes_num, endpoint=False)
         self.dx = self.xy_spacing[1] # [ nm ]
@@ -396,6 +401,7 @@ class model2d:
         boundary = np.round([[x1, x2], [y1, y2]])
         return boundary
 
+    '''
     def show(self):
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
@@ -424,6 +430,7 @@ class model2d:
         look = np.pad(self.Z[0], (wrap_len), mode='wrap')
         look[:wrap_len] -= self.slope_corr
         look[-wrap_len:] += self.slope_corr
+    '''
 
     def show_history(self, n=0):
         #self.name_str = "theta={}, sput={}, moment={}, diff={}, conv={}".format(np.degrees(self.theta), self.erosion, self.moment, self.diffusion, self.conv_sigma)
@@ -499,143 +506,180 @@ class model2d:
         slider.on_changed(update)
         plt.show()
 
-    def show_img(self, num, cell_rep=1,
-                 vmax=None, show=True, boundary=None, boundary_offset=5,
-                 cmap="gray", mode='tri', axis='off',
-                 bin_step=1, r=5, bin_rep=7):
-        # mode: surf, scat
-        # bin_rep: 1, 2, 3, ....
+    def show_img(self, start_frame, period=None, output=None,
+                 cell_rep=1, vmax=None, scalebar=False,
+                 boundary=None, offset=5, boundary_offset=5, img_offset=10,
+                 cmap="gray", mode='tri',
+                 bin_step=1, r=5, bin_rep=7,
+                 tri_method='linear'):
 
-        print("DISPL NUM::{}".format(num))
-        X_, Y_, Z_ = self.leveled_xyz(self.Z_history[num], cell_rep)
-        flat_ = [None, None, None]
-        flat_[0] = X_.flatten()
-        flat_[1] = Y_.flatten()
-        flat_[2] = Z_.flatten()
+        if start_frame < 0:
+            start_frame = len(self.Z_history)-1
 
-        if boundary is None:
-            boundary = self.get_img_boundary(X_, Y_, Z_)
+        if period is None:
+            period = 100000000
 
-        if mode == 'scatter':
-            x_flag = np.logical_and(flat_[0] > boundary[0][0], flat_[0] < boundary[0][1])
-            y_flag = np.logical_and(flat_[1] > boundary[1][0], flat_[1] < boundary[1][1])
+        for num in range(start_frame, len(self.Z_history), period):
+            img_name = "{}.png".format(str(int(num/period)).zfill(5))
 
-            flat = np.array(flat_)
-            flat = flat[:, np.logical_and(x_flag, y_flag)]
+            print("DISPL NUM::{}".format(num))
+            X_, Y_, Z_ = self.leveled_xyz(self.Z_history[num], cell_rep)
+            flat = [None, None, None]
+            flat[0] = X_.flatten()
+            flat[1] = Y_.flatten()
+            flat[2] = Z_.flatten()
 
-            fig = plt.figure()
-            ax = fig.add_subplot(111, projection='3d')
+            if boundary is None:
+                boundary = self.get_img_boundary(X_, Y_, Z_)
+                boundary[0][0] += offset
+                boundary[1][0] += offset
+                boundary[0][1] -= offset
+                boundary[1][1] -= offset
 
-            ax.scatter(flat[0], flat[1], flat[2])
-            ax.set_xlabel("X axis")
-            ax.set_ylabel("Y axis")
-            plt.show()
+            print(boundary)
 
-        elif mode == 'surf':
-            r2 = np.power(r,2)
-            bin_centers = [np.arange(boundary[0,0], boundary[0,1]+0.001, bin_step),
-                                    np.arange(boundary[1,0], boundary[1,1]+0.001, bin_step)]
+            if mode == 'scatter3d' or mode == 'scatter':
+                #x_flag = np.logical_and(flat_[0] > boundary[0][0], flat_[0] < boundary[0][1])
+                #y_flag = np.logical_and(flat_[1] > boundary[1][0], flat_[1] < boundary[1][1])
+                #flat = np.array(flat_)
+                #flat = flat[:, np.logical_and(x_flag, y_flag)]
 
-            bin_edges = np.array([bin_centers[0][:-1]+0.5*bin_step, bin_centers[1][:-1]+0.5*bin_step])
+                if mode == 'scatter3d':
+                    fig = plt.figure()
+                    ax = fig.add_subplot(111, projection='3d')
 
-            indexes = [None, None]
-            indexes[0] = np.digitize(flat_[0], bin_edges[0]) # x bins
-            indexes[1] = np.digitize(flat_[1], bin_edges[1]) # y bins
+                    ax.scatter(flat[0], flat[1], flat[2])
+                    ax.set_xlabel("X axis")
+                    ax.set_ylabel("Y axis")
+                    plt.show()
 
-            safe_offset = -1000000
-            Z_holder = np.ones((bin_centers[1].shape[0], bin_centers[0].shape[0], 3, 3), dtype=float)*safe_offset
+                else:
+                    plt.scatter(flat[0], flat[1])
+                    plt.show()
 
-            for i in range(len(flat_[0])):
-                ix = indexes[0][i]
-                iy = indexes[1][i]
-                cr_z = flat_[2][i]
-                if(Z_holder[iy,ix,0,2] < cr_z):
-                    Z_holder[iy,ix,2] = Z_holder[iy,ix,1]
-                    Z_holder[iy,ix,1] = Z_holder[iy,ix,0]
-                    Z_holder[iy,ix,0] = [flat_[0][i], flat_[1][i], cr_z]
 
-                elif(Z_holder[iy,ix,1,2] < cr_z):
-                    Z_holder[iy,ix,2] = Z_holder[iy,ix,1]
-                    Z_holder[iy,ix,1] = [flat_[0][i], flat_[1][i], cr_z]
+            elif mode == 'surf':
+                r2 = np.power(r,2)
+                bin_centers = [np.arange(boundary[0,0], boundary[0,1]+0.001, bin_step),
+                                        np.arange(boundary[1,0], boundary[1,1]+0.001, bin_step)]
 
-                elif(Z_holder[iy,ix,2,2] < cr_z):
-                    Z_holder[iy,ix,2] = [flat_[0][i], flat_[1][i], cr_z]
+                bin_edges = np.array([bin_centers[0][:-1]+0.5*bin_step, bin_centers[1][:-1]+0.5*bin_step])
 
-            # discard edges
-            Z_holder = Z_holder[1:-1, 1:-1, :, :]
-            probe_bins = (bin_rep*2+1)*(bin_rep*2+1)
-            probe_bins_total = probe_bins*3
-            Z_full_holder = np.empty( (Z_holder.shape[0], Z_holder.shape[1], probe_bins_total, 3) )
+                indexes = [None, None]
+                indexes[0] = np.digitize(flat_[0], bin_edges[0]) # x bins
+                indexes[1] = np.digitize(flat_[1], bin_edges[1]) # y bins
 
-            bin_rep_arr = list(range(-bin_rep, bin_rep+1))
-            for n_, roll_ in zip(range(probe_bins), itertools.product(bin_rep_arr, bin_rep_arr)):
-                #print(roll_, n_*3, (n_+1)*3)
-                Z_full_holder[:,:,n_*3:(n_+1)*3] = np.roll(Z_holder, (roll_[0], roll_[1]), axis=(0,1))
-            Z_full_holder = Z_full_holder[1:-1, 1:-1, :, :]
+                safe_offset = -1000000
+                Z_holder = np.ones((bin_centers[1].shape[0], bin_centers[0].shape[0], 3, 3), dtype=float)*safe_offset
 
-            bin_centers[0] = bin_centers[0][2:-2]
-            bin_centers[1] = bin_centers[1][2:-2]
+                for i in range(len(flat_[0])):
+                    ix = indexes[0][i]
+                    iy = indexes[1][i]
+                    cr_z = flat_[2][i]
+                    if(Z_holder[iy,ix,0,2] < cr_z):
+                        Z_holder[iy,ix,2] = Z_holder[iy,ix,1]
+                        Z_holder[iy,ix,1] = Z_holder[iy,ix,0]
+                        Z_holder[iy,ix,0] = [flat_[0][i], flat_[1][i], cr_z]
 
-            probe = np.stack(np.meshgrid(bin_centers[0], bin_centers[1]), -1)
-            probe = np.append(probe, np.zeros((probe.shape[0], probe.shape[1], 1)), axis=2)
-            probe = np.tile(probe, probe_bins_total).reshape(probe.shape[0], probe.shape[1], probe_bins_total, 3)
+                    elif(Z_holder[iy,ix,1,2] < cr_z):
+                        Z_holder[iy,ix,2] = Z_holder[iy,ix,1]
+                        Z_holder[iy,ix,1] = [flat_[0][i], flat_[1][i], cr_z]
 
-            probe_diff = Z_full_holder - probe
-            probe_height = np.sqrt(r2 - (np.power(probe_diff[:,:,:,0],2) + np.power(probe_diff[:,:,:,1],2)))
-            probe_z = Z_full_holder[:,:,:,2] + probe_height
+                    elif(Z_holder[iy,ix,2,2] < cr_z):
+                        Z_holder[iy,ix,2] = [flat_[0][i], flat_[1][i], cr_z]
 
-            probe_z[np.isnan(probe_z)] = safe_offset
-            probe_z = np.amax(probe_z, -1)
+                # discard edges
+                Z_holder = Z_holder[1:-1, 1:-1, :, :]
+                probe_bins = (bin_rep*2+1)*(bin_rep*2+1)
+                probe_bins_total = probe_bins*3
+                Z_full_holder = np.empty( (Z_holder.shape[0], Z_holder.shape[1], probe_bins_total, 3) )
 
-            probe_z[probe_z <= safe_offset+1] = 0.0
-            probe_z -= np.min(probe_z)
-            print("Probe {}".format(np.max(probe_z)))
+                bin_rep_arr = list(range(-bin_rep, bin_rep+1))
+                for n_, roll_ in zip(range(probe_bins), itertools.product(bin_rep_arr, bin_rep_arr)):
+                    #print(roll_, n_*3, (n_+1)*3)
+                    Z_full_holder[:,:,n_*3:(n_+1)*3] = np.roll(Z_holder, (roll_[0], roll_[1]), axis=(0,1))
+                Z_full_holder = Z_full_holder[1:-1, 1:-1, :, :]
 
-            if vmax is None:
-                vmax = np.max(probe_z)
+                bin_centers[0] = bin_centers[0][2:-2]
+                bin_centers[1] = bin_centers[1][2:-2]
 
-            if vmax == "get":
-                return np.max(probe_z)
+                probe = np.stack(np.meshgrid(bin_centers[0], bin_centers[1]), -1)
+                probe = np.append(probe, np.zeros((probe.shape[0], probe.shape[1], 1)), axis=2)
+                probe = np.tile(probe, probe_bins_total).reshape(probe.shape[0], probe.shape[1], probe_bins_total, 3)
 
-            # normalize
-            probe_z = probe_z / vmax
-            probe_z = (0.5-np.mean(probe_z)) + probe_z
+                probe_diff = Z_full_holder - probe
+                probe_height = np.sqrt(r2 - (np.power(probe_diff[:,:,:,0],2) + np.power(probe_diff[:,:,:,1],2)))
+                probe_z = Z_full_holder[:,:,:,2] + probe_height
 
-            plt.imshow(probe_z, cmap=cmap, vmin=0.0, vmax=1.0)
-            if show:
-                plt.show()
+                probe_z[np.isnan(probe_z)] = safe_offset
+                probe_z = np.amax(probe_z, -1)
 
-        elif mode == 'tri' or mode == 'tri_scatter':
-            boundary
-            flat = np.array(flat_)
-            bond_x = np.logical_and(flat[0] > boundary[0][0] - boundary_offset,
-                                    flat[0] < boundary[0][1] + boundary_offset)
-            bond_y = np.logical_and(flat[1] > boundary[1][0] - boundary_offset,
-                                    flat[1] < boundary[1][1] + boundary_offset)
-            bond = np.logical_and(bond_x, bond_y)
-            base = flat[:, bond]
+                probe_z[probe_z <= safe_offset+1] = 0.0
+                probe_z -= np.min(probe_z)
+                print("Probe {}".format(np.max(probe_z)))
 
-            base[2] = base[2] - np.min(base[2])
-            if vmax is None:
-                vmax = np.max(base[2])
+                if vmax is None:
+                    vmax = np.max(probe_z)
 
-            if vmax == "get":
-                return np.max(base[2])
+                if vmax == "get":
+                    return np.max(probe_z)
 
-            base[2] = base[2] / vmax
-            base[2] += (1-np.max(base[2]))*0.5
+                # normalize
+                probe_z = probe_z / vmax
+                probe_z = (0.5-np.mean(probe_z)) + probe_z
 
-            plt.axes().set_aspect(1.0)
-            plt.axis((boundary[0][0], boundary[0][1], boundary[1][0], boundary[1][1]))
+                if output:
+                    plt.imsave("{}/{}".format(output, img_name), probe_z, cmap=cmap)
+                else:
+                    plt.imshow(probe_z, cmap=cmap, vmin=0.0, vmax=1.0)
+                    plt.show()
 
-            plt.tricontourf(base[0], base[1], base[2], 50, cmap=cmap, vmin=0.0, vmax=1.0)
-            if mode == 'tri_scatter':
-                plt.scatter(base[0], base[1], marker=',', s=1, lw=0, color='red')
+            elif mode == 'tri' or mode == 'tri_scatter':
+                tri = Triangulation(flat[0], flat[1])
+                if tri_method == 'cube':
+                    interpol = CubicTriInterpolator(tri, flat[2])
+                else:
+                    interpol = LinearTriInterpolator(tri, flat[2])
 
-            if show:
-                plt.show()
+                x_new = np.arange(boundary[0][0], boundary[0][1], self.img_dx)
+                y_new = np.arange(boundary[1][0], boundary[1][1], self.img_dx)
+                X_new, Y_new = np.meshgrid(x_new, y_new)
 
-            return plt.figure(1)
+                Z_new = interpol(X_new, Y_new)
+
+                print("Orginal range: {}   {}".format(np.min(Z_new), np.max(Z_new)))
+
+                Z_new = Z_new - np.min(Z_new)
+
+                if vmax == "get":
+                    return np.max(Z_new)
+                if vmax is None:
+                    vmax = np.max(Z_new)
+
+                Z_new = Z_new / vmax
+                Z_new += (1-np.max(Z_new))*0.5
+
+                '''
+                base[2] = base[2] - np.min(base[2])
+                if vmax is None:
+                    vmax = np.max(base[2])
+                if vmax == "get":
+                    return np.max(base[2])
+                base[2] = base[2] / vmax
+                base[2] += (1-np.max(base[2]))*0.5
+                plt.tricontourf(base[0], base[1], base[2], 50, cmap=cmap, vmin=0.0, vmax=1.0)
+                '''
+                if scalebar:
+                    plt.gca().add_artist(ScaleBar(1.0/self.img_dx, 'nm'))
+
+                if output:
+                    plt.imsave("{}/{}".format(output, img_name), Z_new, vmin=0, vmax=1, cmap=cmap)
+
+                else:
+                    plt.imshow(Z_new, vmin=0, vmax=1, cmap=cmap)
+                    if mode == 'tri_scatter':
+                        plt.scatter(base[0]-boundary[0][0], base[1]-boundary[1][0], marker=',', s=1, lw=0, color='red')
+                    plt.show()
 
         #indexed_si = np.digitize(self.start_all_z_list[0]- self.ave_surf, self.dp_bin_edges)
         #[np.linspace(boundary[0,0], boundary[0,1], 1.0)
@@ -715,23 +759,26 @@ class model2d:
 
         ofile.close()
 
-    def write_img(self, out_dir, period=10, bin_step=1, r=5, bin_rep=3, cell_rep=1, vmax=None, boundary=None, cmap="gray"):
-        if boundary is None:
-            eX_, eY_, eZ_ = self.leveled_xyz(self.Z_history[-1], cell_rep)
-            boundary = self.get_img_boundary(eX_, eY_, eZ_)
+    def write_img(self, out_dir, period=10, cell_rep=1,
+                  vmax=None, show=True,
+                  boundary=None, boundary_offset=10, img_offset=10,
+                  cmap="gray", mode='tri',
+                  bin_step=1, r=5, bin_rep=7,
+                  tri_method='linear'):
 
         print("{}, {}, {}".format(0, len(self.Z_history)-1, period))
 
         for i in range(0, len(self.Z_history)-1, period):
             name = "rip.{}.png".format(str(int(i/period)).zfill(5))
 
-            fig = self.show_img(i, bin_step=bin_step, r=r, bin_rep=bin_rep, cell_rep=cell_rep, vmax=vmax, boundary=boundary, show=False)
-            save_figure("{}/{}".format(out_dir, name), fig)
+            #fig = self.show_img(i, bin_step=bin_step, r=r, bin_rep=bin_rep, cell_rep=cell_rep, vmax=vmax, boundary=boundary, show=False)
+            #save_figure("{}/{}".format(out_dir, name), fig)
             #plt.savefig("{}/{}".format(out_dir, name), transparent=True, bbox_inches='tight', pad_inches=0)
 
-            #data = self.show_img(i, bin_step=bin_step, r=r, bin_rep=bin_rep, cell_rep=cell_rep, vmax=vmax, boundary=boundary, show=False)
-            #plt.imsave("{}/{}".format(out_dir,name), data, cmap=cmap, vmin=0.0, vmax=1.0)#, cmap=cm.afmhot)
+            data = self.show_img(i,
 
+                                 bin_step=bin_step, r=r, bin_rep=bin_rep, cell_rep=cell_rep, vmax=vmax, boundary=boundary, show=False)
+            plt.imsave("{}/{}".format(out_dir,name), data, cmap=cmap) #, vmin=0.0, vmax=1.0)#, cmap=cm.afmhot)
     ''' Convinience functions '''
     def run(self, steps):
         info_steps = 1000
@@ -782,10 +829,9 @@ class model2d:
 #m2.irun()
 #m2.iwrite()
 
-m2 = model2d(theta=70)
-for i in range(500):
-    m2.single_step()
+#m2 = model2d(theta=60, sample_len=100, nodes_num=100)
+#for i in range(6000):
+#    m2.single_step()
 
-m2.show_img(-1, mode='tri_scatter')
-m2.show_img(-1, mode='tri', vmax=1)
-m2.write_img('./')
+#m2.show_img(-1, mode='tri_scatter')
+#m2.show_img(-1, mode='tri_scatter', vmax=1)
