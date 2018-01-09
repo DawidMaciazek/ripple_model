@@ -7,6 +7,7 @@ from matplotlib_scalebar.scalebar import ScaleBar
 from mpl_toolkits.mplot3d import axes3d
 from matplotlib.widgets import Slider
 from matplotlib import cm
+from matplotlib.colors import Normalize
 
 import pickle
 
@@ -146,12 +147,7 @@ class model2d:
         self.flux_const = self.flux*self.dt*self.vola # [ proj ] poj in dt on cell
 
         self.damp = kwargs.get('damp', 0.1)
-        self.diff_cycles = kwargs.get('diff_cycles', 10)
-
-        self.interpolate = kwargs.get('interpolate', 0)
-
-        self.sigma_x = 2*np.power(self.dx * np.sqrt(2)/2, 2)
-        self.sigma_y = 2*np.power(self.dx * np.sqrt(2)/(2*np.cos(self.theta)), 2)
+        self.diff_cycles = kwargs.get('diff_cycles', 2)
 
         self.Z_history = []
 
@@ -325,35 +321,27 @@ class model2d:
         self.Z_history.append(self.Z)
 
     ''' Display functions '''
-    def leveled_xyz(self, Z_, n=0):
+    def leveled_xyz(self, Z_, n=0, correction=True):
         # extend X Y Z
         z_mean = np.mean(Z_)
         z_eroded = self.start_ave_surf - z_mean
         print("Eroded_sample: {} ({})".format(np.cos(self.theta)*z_eroded, z_eroded))
 
-        roll_xy = int(np.round((np.sin(self.theta)*z_eroded/np.sqrt(2))/self.dx))
-        roll_xy_rest = (np.sin(self.theta)*z_eroded/np.sqrt(2))/self.dx - np.round((np.sin(self.theta)*z_eroded/np.sqrt(2))/self.dx)
-        print("Roll: {}\nRoll rest: {}".format(roll_xy, roll_xy_rest))
+        if correction:
+            roll_xy = int(np.round((np.sin(self.theta)*z_eroded/np.sqrt(2))/self.dx))
+            roll_xy_rest = (np.sin(self.theta)*z_eroded/np.sqrt(2))/self.dx - np.round((np.sin(self.theta)*z_eroded/np.sqrt(2))/self.dx)
+            print("Roll: {}\nRoll rest: {}".format(roll_xy, roll_xy_rest))
+        else:
+            roll_xy = 0
 
         Z_normalized = Z_ - (self.slope_background - np.mean(self.slope_background)) - z_mean
         Z_normalized = np.roll(Z_normalized, (roll_xy, roll_xy), axis=(0,1))
 
         # extend by n
         Z_normalized = np.pad(Z_normalized, (0, self.nodes_num*n), mode='wrap')
-        xy_spacing = np.linspace(0, self.sample_len*(n+1), self.nodes_num*(n+1), endpoint=False) - self.sample_len*0.5*(n+1) + roll_xy_rest
-
-        '''
-        #add interpolation
-        for i in range(self.interpolate):
-            Z_normalized, xy_spacing = condense_Z(Z_normalized, xy_spacing)
-        '''
-
-        '''
-        f = interpolate.interp2d(xy_spacing, xy_spacing, Z_normalized, kind='linear')
-        Z_normalized = f(xy_spacing_inter, xy_spacing_inter)
-        print(Z_normalized.shape)
-        xy_spacing = xy_spacing_inter
-        '''
+        xy_spacing = np.linspace(0, self.sample_len*(n+1), self.nodes_num*(n+1), endpoint=False) - self.sample_len*0.5*(n+1)
+        if correction:
+            xy_spacing += roll_xy_rest
 
         x_center = np.tile(xy_spacing, (xy_spacing.shape[0], 1))
         y_center = x_center.T
@@ -511,7 +499,7 @@ class model2d:
                  boundary=None, offset=5, boundary_offset=5, img_offset=10,
                  cmap="gray", mode='tri',
                  bin_step=1, r=5, bin_rep=7,
-                 tri_method='linear'):
+                 tri_method='linear', roll_correction=False):
 
         if start_frame < 0:
             start_frame = len(self.Z_history)-1
@@ -520,14 +508,15 @@ class model2d:
             period = 100000000
 
         for num in range(start_frame, len(self.Z_history), period):
-            img_name = "{}.png".format(str(int(num/period)).zfill(5))
+            img_name = "rip.{}.png".format(str(int(num/period)).zfill(5))
 
             print("DISPL NUM::{}".format(num))
-            X_, Y_, Z_ = self.leveled_xyz(self.Z_history[num], cell_rep)
+            X_, Y_, Z_ = self.leveled_xyz(self.Z_history[num], cell_rep, correction=roll_correction)
             flat = [None, None, None]
             flat[0] = X_.flatten()
             flat[1] = Y_.flatten()
             flat[2] = Z_.flatten()
+            flat = np.asarray(flat)
 
             if boundary is None:
                 boundary = self.get_img_boundary(X_, Y_, Z_)
@@ -659,37 +648,52 @@ class model2d:
                 Z_new = Z_new / vmax
                 Z_new += (1-np.max(Z_new))*0.5
 
-                '''
-                base[2] = base[2] - np.min(base[2])
-                if vmax is None:
-                    vmax = np.max(base[2])
-                if vmax == "get":
-                    return np.max(base[2])
-                base[2] = base[2] / vmax
-                base[2] += (1-np.max(base[2]))*0.5
-                plt.tricontourf(base[0], base[1], base[2], 50, cmap=cmap, vmin=0.0, vmax=1.0)
-                '''
+
                 if scalebar:
                     plt.gca().add_artist(ScaleBar(1.0/self.img_dx, 'nm'))
 
                 if output:
-                    plt.imsave("{}/{}".format(output, img_name), Z_new, vmin=0, vmax=1, cmap=cmap)
+                    if mode == 'tri':
+                        plt.imsave("{}/{}".format(output, img_name), Z_new, vmin=0, vmax=1, cmap=cmap)
+                    else:
+                        inside_box = np.logical_and(
+                            np.logical_and(flat[0]>boundary[0][0], flat[0]<boundary[0][1]),
+                            np.logical_and(flat[1]>boundary[1][0], flat[1]<boundary[1][1]))
+                        scatter_x = flat[0, inside_box]
+                        scatter_y = flat[1, inside_box]
+
+                        plt.imshow(Z_new, vmin=0, vmax=1, cmap=cmap)
+                        plt.scatter(scatter_x-boundary[0][0], scatter_y-boundary[1][0], marker=',', s=1, lw=0, color='red')
+                        plt.savefig("{}/{}".format(output, img_name))
+                        plt.cla()
+
 
                 else:
                     plt.imshow(Z_new, vmin=0, vmax=1, cmap=cmap)
                     if mode == 'tri_scatter':
-                        plt.scatter(base[0]-boundary[0][0], base[1]-boundary[1][0], marker=',', s=1, lw=0, color='red')
+                        inside_box = np.logical_and(
+                            np.logical_and(flat[0]>boundary[0][0], flat[0]<boundary[0][1]),
+                            np.logical_and(flat[1]>boundary[1][0], flat[1]<boundary[1][1]))
+                        scatter_x = flat[0, inside_box]
+                        scatter_y = flat[1, inside_box]
+
+
+                        plt.scatter(scatter_x-boundary[0][0], scatter_y-boundary[1][0], marker=',', s=1, lw=0, color='red')
                     plt.show()
 
         #indexed_si = np.digitize(self.start_all_z_list[0]- self.ave_surf, self.dp_bin_edges)
         #[np.linspace(boundary[0,0], boundary[0,1], 1.0)
 
     def show_yam(self):
-        plt.plot(np.linspace(0,90), yamamura(np.linspace(0, np.pi/2.0), self.theta_opt, self.f))
+        plt.plot(np.linspace(0,90), self.yamp*yamamura(np.linspace(0, np.pi/2.0), self.theta_opt, self.f))
+        plt.xlim([0,90])
         plt.show()
 
-    def show_color(self):
-        l_z = np.pad(self.Z, ((0, 1), (0,1)), mode='wrap')
+    def show_color(self, num=-1, displ='sput'):
+        Z_ = self.Z_history[num]
+        X_ = self.X
+        Y_ = self.Y
+        l_z = np.pad(Z_, ((0, 1), (0,1)), mode='wrap')
         l_z += self.slope_corr_diff1
 
         l_slopes_x = np.diff(l_z, 1, axis=1)[:-1]/self.dx
@@ -705,17 +709,86 @@ class model2d:
 
         normal_magnitude = np.sqrt(np.power(slopes_x, 2) + np.power(slopes_y, 2) + 1.0)
         thetas = np.arccos(1.0/normal_magnitude)
+        if displ == 'moment':
+            omegas = np.arctan2(slopes_y, slopes_x)
+            omegas = np.abs(omegas)
+            omegas[omegas >= np.pi*0.5] = np.pi - omegas[omegas >= np.pi*0.5]
 
+            x_back_mask = slopes_x > 0.0
+            x_for_mask = np.logical_not(x_back_mask)
 
-        results = (self.yamp * self.flux_const) * yamamura(thetas,self.theta_opt, self.f)
+            y_back_mask = slopes_y > 0.0
+            y_for_mask = np.logical_not(y_back_mask)
+
+            # ero_00 = (1.0-np.cos(4.0*thetas))*self.moment/(normal_magnitude*np.power(self.dx, 3))
+            # ANGLE NORMALIZATION INSIDE DEFINITION BELOW
+            ero_00 = (self.mamp * self.flux_const * (1.0/self.dx) * 0.5) * (1.0-np.cos(4.0*thetas))
+            sin_omega = np.sin(omegas)
+            cos_omega = np.cos(omegas)
+
+            acc_00 = (1-sin_omega)*(1-cos_omega)*ero_00
+            acc_01 = cos_omega*(1-sin_omega)*ero_00
+            acc_10 = (1-cos_omega)*sin_omega*ero_00
+            acc_11 = sin_omega*cos_omega*ero_00
+
+            # lets roll
+            acc_01 = np.roll(x_for_mask*acc_01, (1, 0), axis=(1, 0)) \
+                + np.roll(x_back_mask*acc_01, (-1, 0), axis=(1,0))
+
+            acc_10 = np.roll(y_for_mask*acc_10, (0, 1), axis=(1,0)) \
+                + np.roll(y_back_mask*acc_10, (0, -1), axis=(1,0))
+
+            """
+            (-1, -1) | (-1, 0) | (-1, 1)
+            ----------------------------
+            (0, -1)  |         | (0, 1)
+            ----------------------------
+            (1, -1)  | (1, 0)  | (1, 1)
+            """
+
+            acc_11 = np.roll(np.logical_and(x_for_mask, y_for_mask)*acc_11, (1, 1), axis=(1,0)) \
+                + np.roll(np.logical_and(x_for_mask, y_back_mask)*acc_11, (1, -1), axis=(1,0)) \
+                + np.roll(np.logical_and(x_back_mask, y_back_mask)*acc_11, (-1, -1), axis=(1,0)) \
+                + np.roll(np.logical_and(x_back_mask, y_for_mask)*acc_11, (-1, 1), axis=(1,0))
+
+            results = -ero_00+acc_00+acc_01+acc_10+acc_11
+
+        elif displ == 'sput':
+            results = (self.yamp * self.flux_const) * yamamura(thetas,self.theta_opt, self.f)
+
         res_max = np.max(results)
         res_min = np.min(results)
 
+        print(res_max, res_min)
         fig = plt.figure()
         ax = fig.add_subplot(111, projection='3d')
-        my_col = cm.afmhot((results-res_min)/(res_max-res_min))
+        ax.set_aspect('equal')
 
-        surf = ax.plot_surface(self.X, self.Y, self.Z, facecolors=my_col)
+        if displ == 'moment':
+            abs_max = max(abs(res_min), abs(res_max))
+            normalized = (results/(2*abs_max))+0.5
+            # 0 -> 255
+            digitized = np.array(255*normalized, dtype=int)
+            print(np.min(normalized), np.max(normalized))
+            print(np.min(digitized), np.max(digitized))
+            my_col = cm.seismic(digitized)
+
+        elif displ == 'sput':
+            my_col = cm.afmhot((results-res_min)/(res_max-res_min))
+
+        max_range=np.array([X_.max()-X_.min(),
+                         Y_.max()-Y_.min(),
+                         Z_.max()-Y_.min()]).max() / 2.0
+
+        mid_x = (X_.max()+X_.min())*0.5
+        mid_y = (Y_.max()+Y_.min())*0.5
+        mid_z = (Z_.max()+Z_.min())*0.5
+
+        ax.set_xlim(mid_x - max_range, mid_x + max_range)
+        ax.set_ylim(mid_y - max_range, mid_y + max_range)
+        ax.set_zlim(mid_z - max_range, mid_z + max_range)
+
+        surf = ax.plot_surface(X_, Y_, Z_, facecolors=my_col)
         #, lrstride=1, cstride=1, inewidth=0)#,antialiased=False
         plt.show()
         f, (a1, a2, a3, a4) = plt.subplots(1,4)
@@ -822,6 +895,8 @@ class model2d:
         per=int(input("You have {} frames now, choose period:".format(len(self.Z_history))))
         self.write_img("/tmp/playground2",period=per, r=9, bin_rep=4)
 
+    def __len__(self):
+        return len(self.Z_history)
 #m2 = model2d(theta=60, sample_len=100, nodes_num=100, damp=1.0, diff_cycles=7, diff_correction=True, noise=0.1) #, theta_opt=50)
 #m2 = model2d(theta=70, theta_opt=50, sample_len=100, nodes_num=100, mamp=5, damp=0.05, diff_cycles=7, diff_correction=True, noise=0.2, interpolat=1) #, theta_opt=50)
 #m2.show_yam()
@@ -835,3 +910,4 @@ class model2d:
 
 #m2.show_img(-1, mode='tri_scatter')
 #m2.show_img(-1, mode='tri_scatter', vmax=1)
+
