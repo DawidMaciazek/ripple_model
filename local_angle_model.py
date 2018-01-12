@@ -139,15 +139,17 @@ class model2d:
         # amp*((1-cos(theta))*0.5)
         self.mamp = kwargs.get('mamp', 24) # [ nm/projectile ] # Si
 
-        self.noise = kwargs.get('noise', 0.5) # noise level
+        self.noise = kwargs.get('noise', 0.1) # noise level
         self.flux = kwargs.get('flux', 1.0) # [ proj/s nm^2 ] # Si
         self.dt = kwargs.get('dt', 1.0) # [ s ]
         self.vola = kwargs.get('vola', 0.0027324) # [ nm^3 ] atom volume // Si
 
         self.flux_const = self.flux*self.dt*self.vola # [ proj ] poj in dt on cell
 
+        self.z_rotation = np.radians(kwargs.get('z_rotation', 45))
+
         self.damp = kwargs.get('damp', 0.1)
-        self.diff_cycles = kwargs.get('diff_cycles', 2)
+        self.diff_cycles = kwargs.get('diff_cycles', 1)
 
         self.Z_history = []
 
@@ -285,8 +287,13 @@ class model2d:
                 l_angles_y = np.arctan(l_slopes_y)
 
                 # /\ 180, \/ -180
+                #rx = np.arange(-np.radians(360), np.radians(360), 0.1)
+                #plt.plot(rx, np.tan(ext*rx*0.25) )
+                #plt.show()
+
                 node_angles_x = np.roll(l_angles_x, (1, 0), axis=(1, 0)) - l_angles_x
                 node_angles_y = np.roll(l_angles_y, (0, 1), axis=(1, 0)) - l_angles_y
+
                 node_angles = (node_angles_x + node_angles_y)*0.5
 
                 # forward distance
@@ -297,6 +304,13 @@ class model2d:
                 vol_h = np.power(self.vola, 1./3.)
                 forward_transport_x = -vol_h*np.sin(0.25*(node_angles - np.roll(node_angles, -1, axis=1)))/l_dist_x
                 forward_transport_y = -vol_h*np.sin(0.25*(node_angles - np.roll(node_angles, -1, axis=0)))/l_dist_y
+                """
+                ext = 3.0
+                #print(np.degrees(np.max(l_angles_x)), np.degrees(np.max(l_angles_y)))
+                forward_transport_x = -vol_h*np.tan(ext*0.25*(node_angles - np.roll(node_angles, -1, axis=1)))/l_dist_x
+                forward_transport_y = -vol_h*np.tan(ext*0.25*(node_angles - np.roll(node_angles, -1, axis=0)))/l_dist_y
+                """
+
 
                 backward_transport_x = -np.roll(forward_transport_x, 1, axis=1)
                 backward_transport_y = -np.roll(forward_transport_y, 1, axis=0)
@@ -353,7 +367,7 @@ class model2d:
         rot_matrix = rotation_matrix(np.array([-1,1,0], dtype=float), self.theta)
         xyz_rot = np.tensordot(xyz, rot_matrix, axes=([2], [0]))
         # rotate around z axis
-        rot_matrix = rotation_matrix(np.array([0,0,1], dtype=float), np.pi*0.25)
+        rot_matrix = rotation_matrix(np.array([0,0,1], dtype=float), self.z_rotation)
         xyz_rot = np.tensordot(xyz_rot, rot_matrix, axes=([2], [0]))
 
         xyz_unstacked = np.split(xyz_rot, 3, axis=-1)
@@ -464,32 +478,91 @@ class model2d:
         axslider = plt.axes([0.15, 0.1, 0.65, 0.05])
         slider = Slider(axslider, 'Tmp', 0, len(self.Z_history)-1, valinit=1)
 
-
         def update(val):
+            num = int(val)
+            Z_ = self.Z_history[num]
+            l_z = np.pad(Z_, ((0, 1), (0,1)), mode='wrap')
+            l_z += self.slope_corr_diff1
+
+            l_slopes_x = np.diff(l_z, 1, axis=1)[:-1]/self.dx
+            l_slopes_y = np.diff(l_z, 1, axis=0)[:,:-1]/self.dx
+
+            l_angles_x = np.arctan(l_slopes_x)
+            l_angles_y = np.arctan(l_slopes_y)
+
+            angles_x = (np.roll(l_angles_x, 1, axis=1) + l_angles_x)*0.5
+            angles_y = (np.roll(l_angles_y, 1, axis=0) + l_angles_y)*0.5
+            slopes_x = np.tan(angles_x)
+            slopes_y = np.tan(angles_y)
+
+            normal_magnitude = np.sqrt(np.power(slopes_x, 2) + np.power(slopes_y, 2) + 1.0)
+            thetas = np.arccos(1.0/normal_magnitude)
+            omegas = np.arctan2(slopes_y, slopes_x)
+            omegas = np.abs(omegas)
+            omegas[omegas >= np.pi*0.5] = np.pi - omegas[omegas >= np.pi*0.5]
+
+            x_back_mask = slopes_x > 0.0
+            x_for_mask = np.logical_not(x_back_mask)
+
+            y_back_mask = slopes_y > 0.0
+            y_for_mask = np.logical_not(y_back_mask)
+
+            # ero_00 = (1.0-np.cos(4.0*thetas))*self.moment/(normal_magnitude*np.power(self.dx, 3))
+            # ANGLE NORMALIZATION INSIDE DEFINITION BELOW
+            ero_00 = (self.mamp * self.flux_const * (1.0/self.dx) * 0.5) * (1.0-np.cos(4.0*thetas))
+            sin_omega = np.sin(omegas)
+            cos_omega = np.cos(omegas)
+
+            acc_00 = (1-sin_omega)*(1-cos_omega)*ero_00
+            acc_01 = cos_omega*(1-sin_omega)*ero_00
+            acc_10 = (1-cos_omega)*sin_omega*ero_00
+            acc_11 = sin_omega*cos_omega*ero_00
+
+            # lets roll
+            acc_01 = np.roll(x_for_mask*acc_01, (1, 0), axis=(1, 0)) \
+                + np.roll(x_back_mask*acc_01, (-1, 0), axis=(1,0))
+
+            acc_10 = np.roll(y_for_mask*acc_10, (0, 1), axis=(1,0)) \
+                + np.roll(y_back_mask*acc_10, (0, -1), axis=(1,0))
+
+            """
+            (-1, -1) | (-1, 0) | (-1, 1)
+            ----------------------------
+            (0, -1)  |         | (0, 1)
+            ----------------------------
+            (1, -1)  | (1, 0)  | (1, 1)
+            """
+
+            acc_11 = np.roll(np.logical_and(x_for_mask, y_for_mask)*acc_11, (1, 1), axis=(1,0)) \
+                + np.roll(np.logical_and(x_for_mask, y_back_mask)*acc_11, (1, -1), axis=(1,0)) \
+                + np.roll(np.logical_and(x_back_mask, y_back_mask)*acc_11, (-1, -1), axis=(1,0)) \
+                + np.roll(np.logical_and(x_back_mask, y_for_mask)*acc_11, (-1, 1), axis=(1,0))
+
+            moment = -ero_00+acc_00+acc_01+acc_10+acc_11
+            moment_diag = np.diag(moment)
+            sput = (self.yamp * self.flux_const) * yamamura(thetas,self.theta_opt, self.f)
+            sput_diag = np.diag(sput)
+            print(np.min(sput_diag), np.max(sput_diag))
+
+            X_, Y_, Z_ = self.leveled_xyz(Z_, 0, correction=True)
+
+            z_diag = np.diag(Z_)
+            x_diag = np.diag(X_)
+
             ax.clear()
+            ax.plot(x_diag,z_diag)
+            ax.scatter(x_diag,z_diag)
 
-            z_ = self.Z_history[int(val)].diagonal().copy()
-            eroded = -np.average(z_)
-            print(eroded)
-            z_ += eroded
-            z_ -= self.slope_background.diagonal()
+            max_x = np.max(np.abs(z_diag))
+            max_sm = np.max([np.max(np.abs(sput_diag)), np.max(np.abs(moment_diag))])
+            sput_diag = -(max_x/max_sm)*sput_diag
+            moment_diag = (max_x/max_sm)*moment_diag
 
+            ax.plot(x_diag, sput_diag)
+            ax.scatter(x_diag, sput_diag)
 
-            roll_xy = int(np.round((np.sin(self.theta)*eroded)/self.dx))
-            z_ = np.roll(z_, roll_xy)
-            z_ += self.slope_background.diagonal()
-
-            xz = np.array([self.x_diag, z_])
-            xz = np.dot(rot_matrix, xz)
-            x_ = xz[0]
-            z_ = xz[1]
-
-            ax.plot(x_, z_)
-            #y_ = np.roll(y_, -roll_xy)
-
-            #plot.set_ydata(xy[1])
-            #ax.plot(self.x_diag, after_roll_back)
-            #ax.plot(self.x_diag, z_)
+            ax.plot(x_diag, moment_diag)
+            ax.scatter(x_diag, moment_diag)
 
         slider.on_changed(update)
         plt.show()
@@ -791,9 +864,9 @@ class model2d:
         surf = ax.plot_surface(X_, Y_, Z_, facecolors=my_col)
         #, lrstride=1, cstride=1, inewidth=0)#,antialiased=False
         plt.show()
-        f, (a1, a2, a3, a4) = plt.subplots(1,4)
-        a1.imshow(l_slopes_x)
-        a2.imshow(np.degrees(angles_x))
+        f, (a3, a4) = plt.subplots(1,2)
+        #a1.imshow(l_slopes_x)
+        #a2.imshow(np.degrees(angles_x))
         a3.imshow(np.degrees(thetas))
         a4.imshow(results)
         plt.show()
