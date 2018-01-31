@@ -1,4 +1,5 @@
 import time
+import math
 import numpy as np
 import matplotlib.pyplot as plt
 import itertools
@@ -46,8 +47,8 @@ def save_figure(fileName,fig=None,**kwargs):
     fig.savefig(fileName, transparent=True, bbox_inches='tight', \
                         pad_inches=0)
 
-def yamamura(theta, theta_opt, f):
-    return np.power(np.cos(theta), -f)*np.exp(f * (1-np.power(np.cos(theta), -1)) * np.cos(theta_opt)  )
+def yamamura(theta, ytheta, f):
+    return np.power(np.cos(theta), -f)*np.exp(f * (1-np.power(np.cos(theta), -1)) * np.cos(ytheta)  )
 
 def rotation_matrix(r_vec, ra):
     r_vec = np.array(r_vec)
@@ -133,11 +134,13 @@ class model2d:
 
         self.f = kwargs.get('f', 1.57)
         self.yamp = kwargs.get('yamp', 1.85) # [ atoms/projectile ] // Si
-        self.theta_opt = kwargs.get('theta_opt', 78.0)
-        self.theta_opt = np.radians(self.theta_opt)
+        self.ytheta = kwargs.get('ytheta', 78.0)
+        self.ytheta = np.radians(self.ytheta)
 
         # amp*((1-cos(theta))*0.5)
         self.mamp = kwargs.get('mamp', 24) # [ nm/projectile ] # Si
+        self.mtheta = kwargs.get('mtheta', 45)
+        self.mpow = math.log(1-self.mtheta/90.0, 0.5)
 
         self.noise = kwargs.get('noise', 0.1) # noise level
         self.flux = kwargs.get('flux', 1.0) # [ proj/s nm^2 ] # Si
@@ -174,7 +177,7 @@ class model2d:
         beam_randomness = np.abs(np.random.normal(1,self.noise,(self.nodes_num, self.nodes_num)))
 
         # Sputtering erosion
-        sputtered = (self.yamp * self.flux_const) * yamamura(thetas,self.theta_opt, self.f)*beam_randomness
+        sputtered = (self.yamp * self.flux_const) * yamamura(thetas,self.ytheta, self.f)*beam_randomness
         #print("SPUT", np.sum(sputtered)/(len(sputtered)*len(sputtered)))
         self.Z -= sputtered
 
@@ -189,9 +192,31 @@ class model2d:
         y_back_mask = slopes_y > 0.0
         y_for_mask = np.logical_not(y_back_mask)
 
+        try:
+            if self.init_lookup == False:
+                pass
+        except:
+            self.init_lookup = False
+            __x__ = np.linspace(0, np.pi*0.5)
+            plt.plot(__x__, __x__)
+            plt.plot(__x__, 0.5*np.pi*np.power(__x__*2/np.pi, self.mpow))
+            plt.show()
+            #plt.plot(np.degrees(__x__), (1.0-np.cos(4.0*0.5*np.pi*np.power(__x__*2/np.pi, self.mpow))), label='Displacement')
+            plt.plot(np.degrees(__x__), (np.sin(np.pi*np.power(__x__*2/np.pi, self.mpow))), label='Displacement')
+            plt.plot(np.degrees(__x__), yamamura(__x__, self.ytheta, self.f), label='Sputtering')
+            plt.legend()
+            plt.show()
         # ero_00 = (1.0-np.cos(4.0*thetas))*self.moment/(normal_magnitude*np.power(self.dx, 3))
         # ANGLE NORMALIZATION INSIDE DEFINITION BELOW
-        ero_00 = (self.mamp * self.flux_const * (1.0/self.dx) * 0.5) * (1.0-np.cos(4.0*thetas))
+        # ero_00 = (self.mamp * self.flux_const * (1.0/self.dx) * 0.5) * (1.0-np.cos(4.0*thetas))
+
+        # theta 0 > Pi/2
+        skewed_thetas =  0.5*np.pi*np.power(thetas*2/np.pi, self.mpow)
+
+        ero_00 = (self.mamp * self.flux_const * (1.0/self.dx) * 0.5) * np.sin(np.pi*np.power(skewed_thetas*2/np.pi, self.mpow))
+        #ero_00 = (self.mamp * self.flux_const * (1.0/self.dx) * 0.5) * (1.0-np.cos(4.0*skewed_thetas))
+
+
         sin_omega = np.sin(omegas)
         cos_omega = np.cos(omegas)
 
@@ -321,6 +346,14 @@ class model2d:
     ''' Modify/test surface functions '''
     def add_sin(self, amp, nx, ny):
         self.Z += amp*np.sin(2*np.pi*(nx*self.X/self.sample_len + ny*self.Y/self.sample_len))
+
+    def add_gauss(self, amp, sigmax, sigmay):
+        center = self.xy_spacing[int(len(self.xy_spacing)/2)]
+        x_c = self.X-center
+        y_c = self.Y-center
+
+        self.Z += amp*np.exp(-np.power(x_c,2)/(2*np.power(sigmax,2))
+                             -np.power(y_c,2)/(2*np.power(sigmay,2)))
 
     def add_cos(self, amp, nx, ny):
         self.Z += amp*np.cos(2*np.pi*(nx*self.X/self.sample_len + ny*self.Y/self.sample_len))
@@ -540,7 +573,7 @@ class model2d:
 
             moment = -ero_00+acc_00+acc_01+acc_10+acc_11
             moment_diag = np.diag(moment)
-            sput = (self.yamp * self.flux_const) * yamamura(thetas,self.theta_opt, self.f)
+            sput = (self.yamp * self.flux_const) * yamamura(thetas,self.ytheta, self.f)
             sput_diag = np.diag(sput)
             print(np.min(sput_diag), np.max(sput_diag))
 
@@ -572,7 +605,7 @@ class model2d:
                  boundary=None, offset=5, boundary_offset=5, img_offset=10,
                  cmap="gray", mode='tri',
                  bin_step=1, r=5, bin_rep=7,
-                 tri_method='linear', roll_correction=False):
+                 tri_method='linear', roll_correction=True):
 
         if start_frame < 0:
             start_frame = len(self.Z_history)-1
@@ -758,7 +791,7 @@ class model2d:
         #[np.linspace(boundary[0,0], boundary[0,1], 1.0)
 
     def show_yam(self):
-        plt.plot(np.linspace(0,90), self.yamp*yamamura(np.linspace(0, np.pi/2.0), self.theta_opt, self.f))
+        plt.plot(np.linspace(0,90), self.yamp*yamamura(np.linspace(0, np.pi/2.0), self.ytheta, self.f))
         plt.xlim([0,90])
         plt.show()
 
@@ -827,7 +860,7 @@ class model2d:
             results = -ero_00+acc_00+acc_01+acc_10+acc_11
 
         elif displ == 'sput':
-            results = (self.yamp * self.flux_const) * yamamura(thetas,self.theta_opt, self.f)
+            results = (self.yamp * self.flux_const) * yamamura(thetas,self.ytheta, self.f)
 
         res_max = np.max(results)
         res_min = np.min(results)
@@ -958,7 +991,7 @@ class model2d:
 
             self.show_history_1d(aspect=1)
             self.show_history(n=1)
-            self.show_img(len(self.Z_history)-1)
+            self.show_img(len(self.Z_history)-1, cmap='afmhot')
             try:
                 steps = int(input("Steps to perform:"))
             except:
@@ -970,8 +1003,8 @@ class model2d:
 
     def __len__(self):
         return len(self.Z_history)
-#m2 = model2d(theta=60, sample_len=100, nodes_num=100, damp=1.0, diff_cycles=7, diff_correction=True, noise=0.1) #, theta_opt=50)
-#m2 = model2d(theta=70, theta_opt=50, sample_len=100, nodes_num=100, mamp=5, damp=0.05, diff_cycles=7, diff_correction=True, noise=0.2, interpolat=1) #, theta_opt=50)
+#m2 = model2d(theta=60, sample_len=100, nodes_num=100, damp=1.0, diff_cycles=7, diff_correction=True, noise=0.1) #, ytheta=50)
+#m2 = model2d(theta=70, ytheta=50, sample_len=100, nodes_num=100, mamp=5, damp=0.05, diff_cycles=7, diff_correction=True, noise=0.2, interpolat=1) #, ytheta=50)
 #m2.show_yam()
 
 #m2.irun()
