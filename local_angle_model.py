@@ -15,6 +15,9 @@ import pickle
 from matplotlib.tri.triangulation import Triangulation
 from matplotlib.tri.triinterpolate import CubicTriInterpolator, LinearTriInterpolator
 
+from scipy.interpolate import interp1d
+
+import sys
 import warnings
 warnings.filterwarnings('error')
 warnings.filterwarnings('ignore')
@@ -47,8 +50,32 @@ def save_figure(fileName,fig=None,**kwargs):
     fig.savefig(fileName, transparent=True, bbox_inches='tight', \
                         pad_inches=0)
 
+
+# on fast edit
+#
+md_res = np.loadtxt("3000ar.txt")
+sput_base = md_res[:,1]
+redist_base = md_res[:,2]
+rad_theta_base = np.radians(md_res[:,0])
+test_x = np.arange(0,0.5*np.pi, 0.01)
+
+sput_fit = interp1d(rad_theta_base, sput_base, kind="cubic")
+redist_fit = interp1d(rad_theta_base, redist_base, kind="cubic")
+
+plt.plot(np.degrees(rad_theta_base), sput_base)
+plt.plot(np.degrees(test_x), sput_fit(test_x))
+plt.show()
+
+plt.plot(np.degrees(rad_theta_base), redist_base)
+plt.plot(np.degrees(test_x), redist_fit(test_x))
+plt.show()
+
 def yamamura(theta, ytheta, f):
-    return np.power(np.cos(theta), -f)*np.exp(f * (1-np.power(np.cos(theta), -1)) * np.cos(ytheta)  )
+    #return np.power(np.cos(theta), -f)*np.exp(f * (1-np.power(np.cos(theta), -1)) * np.cos(ytheta)  )
+    return sput_fit(theta)
+
+def redist_fun(theta):
+    return redist_fit(theta)
 
 def rotation_matrix(r_vec, ra):
     r_vec = np.array(r_vec)
@@ -138,14 +165,15 @@ class model2d:
         self.ytheta = np.radians(self.ytheta)
 
         # amp*((1-cos(theta))*0.5)
-        self.mamp = kwargs.get('mamp', 24) # [ nm/projectile ] # Si
-        self.mtheta = kwargs.get('mtheta', 45)
+        self.mamp = kwargs.get('mamp', 24)
+        self.mtheta = kwargs.get("mtheta", 45)
         self.mpow = math.log(1-self.mtheta/90.0, 0.5)
 
         self.noise = kwargs.get('noise', 0.1) # noise level
         self.flux = kwargs.get('flux', 1.0) # [ proj/s nm^2 ] # Si
         self.dt = kwargs.get('dt', 1.0) # [ s ]
         self.vola = kwargs.get('vola', 0.0027324) # [ nm^3 ] atom volume // Si
+        print(self.vola)
 
         self.flux_const = self.flux*self.dt*self.vola # [ proj ] poj in dt on cell
 
@@ -198,9 +226,9 @@ class model2d:
         except:
             self.init_lookup = False
             __x__ = np.linspace(0, np.pi*0.5)
-            plt.plot(__x__, __x__)
-            plt.plot(__x__, 0.5*np.pi*np.power(__x__*2/np.pi, self.mpow))
-            plt.show()
+            #plt.plot(__x__, __x__)
+            #plt.plot(__x__, 0.5*np.pi*np.power(__x__*2/np.pi, self.mpow))
+            #plt.show()
             #plt.plot(np.degrees(__x__), (1.0-np.cos(4.0*0.5*np.pi*np.power(__x__*2/np.pi, self.mpow))), label='Displacement')
             plt.plot(np.degrees(__x__), (np.sin(np.pi*np.power(__x__*2/np.pi, self.mpow))), label='Displacement')
             plt.plot(np.degrees(__x__), yamamura(__x__, self.ytheta, self.f), label='Sputtering')
@@ -211,9 +239,12 @@ class model2d:
         # ero_00 = (self.mamp * self.flux_const * (1.0/self.dx) * 0.5) * (1.0-np.cos(4.0*thetas))
 
         # theta 0 > Pi/2
-        skewed_thetas =  0.5*np.pi*np.power(thetas*2/np.pi, self.mpow)
+        #skewed_thetas =  0.5*np.pi*np.power(thetas*2/np.pi, self.mpow)
+        #ero_00 = (self.mamp * self.flux_const * (1.0/self.dx) * 0.5) * np.sin(np.pi*np.power(skewed_thetas*2/np.pi, self.mpow))
+        ero_00 = self.mamp * self.flux_const * (1.0/self.dx) * 0.5 * redist_fun(thetas)
 
-        ero_00 = (self.mamp * self.flux_const * (1.0/self.dx) * 0.5) * np.sin(np.pi*np.power(skewed_thetas*2/np.pi, self.mpow))
+
+
         #ero_00 = (self.mamp * self.flux_const * (1.0/self.dx) * 0.5) * (1.0-np.cos(4.0*skewed_thetas))
 
 
@@ -592,7 +623,7 @@ class model2d:
             moment_diag = (max_x/max_sm)*moment_diag
 
             ax.plot(x_diag, sput_diag)
-            ax.scatter(x_diag, sput_diag)
+            ax.scatter(x_diag, sput_diag, c='r')
 
             ax.plot(x_diag, moment_diag)
             ax.scatter(x_diag, moment_diag)
@@ -954,9 +985,7 @@ class model2d:
             #save_figure("{}/{}".format(out_dir, name), fig)
             #plt.savefig("{}/{}".format(out_dir, name), transparent=True, bbox_inches='tight', pad_inches=0)
 
-            data = self.show_img(i,
-
-                                 bin_step=bin_step, r=r, bin_rep=bin_rep, cell_rep=cell_rep, vmax=vmax, boundary=boundary, show=False)
+            data = self.show_img(i, bin_step=bin_step, r=r, bin_rep=bin_rep, cell_rep=cell_rep, vmax=vmax, boundary=boundary, show=False)
             plt.imsave("{}/{}".format(out_dir,name), data, cmap=cmap) #, vmin=0.0, vmax=1.0)#, cmap=cm.afmhot)
     ''' Convinience functions '''
     def run(self, steps):
@@ -987,9 +1016,9 @@ class model2d:
                     self.single_step()
                 single_loop = time.time() - t
                 loops_to_end = steps-step
-                print("single: {} s \nelapsed: {} s  ({} min)".format(single_loop, loops_to_end*single_loop, loops_to_end*single_loop/60.0))
+                print("single:    {} s \nestimated: {} s  ({} min)".format(single_loop, loops_to_end*single_loop, loops_to_end*single_loop/60.0))
 
-            self.show_history_1d(aspect=1)
+            self.show_history_1d(aspect=1, rotate=False)
             self.show_history(n=1)
             self.show_img(len(self.Z_history)-1, cmap='afmhot')
             try:
@@ -1003,17 +1032,9 @@ class model2d:
 
     def __len__(self):
         return len(self.Z_history)
-#m2 = model2d(theta=60, sample_len=100, nodes_num=100, damp=1.0, diff_cycles=7, diff_correction=True, noise=0.1) #, ytheta=50)
-#m2 = model2d(theta=70, ytheta=50, sample_len=100, nodes_num=100, mamp=5, damp=0.05, diff_cycles=7, diff_correction=True, noise=0.2, interpolat=1) #, ytheta=50)
-#m2.show_yam()
 
-#m2.irun()
-#m2.iwrite()
-
-#m2 = model2d(theta=60, sample_len=100, nodes_num=100)
-#for i in range(6000):
-#    m2.single_step()
-
-#m2.show_img(-1, mode='tri_scatter')
-#m2.show_img(-1, mode='tri_scatter', vmax=1)
-
+vol_au = 0.0168
+theta = float(input("Enter incidence angle:"))
+m = model2d(theta=theta, mtheta=26, vola=vol_au, yamp=1, mamp=1, dt=0.001,
+            sample_len=50, nodes_num=40, damp=0.005, diff_cycles=2, noise=0.10)
+m.irun()

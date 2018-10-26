@@ -47,6 +47,12 @@ class diff_model:
         g = amp*np.exp(-np.power(self.x-self.sample_len/2.0, 2)/(2*np.power(sigma, 2)))
         self.y -= np.roll(g, random.randint(0, self.nodes-1))
 
+        g_back = 0.2*amp*np.exp(-np.power(self.x-self.sample_len/2.0+0.8*sigma, 2)/(2*np.power(sigma, 2)))
+        self.y += np.roll(g_back, random.randint(0, self.nodes-1))
+
+        g_for = 0.3*amp*np.exp(-np.power(self.x-self.sample_len/2.0-0.8*sigma, 2)/(2*np.power(sigma, 2)))
+        self.y += np.roll(g_for, random.randint(0, self.nodes-1))
+
     def single_conv(self):
         #self.y += self.diff*(self.y-np.convolve(np.pad(self.y, (self.gauss_half, self.gauss_half), mode='wrap'), self.gauss, mode='valid'))
         self.y_history.append(self.y.copy())
@@ -81,13 +87,25 @@ class diff_model:
 
     def single_mc(self):
         diff = np.diff(np.pad(self.y, (1,1), mode='wrap'), 2)
-        const = 0.1
+        const = 0.02
+
 
         node_energy = 1.55/(1.0+np.exp((diff)*51+1.7))
         diff_forward = np.roll(node_energy, -1) - node_energy
-        forward = np.exp(const*diff_forward) - np.exp(-const*diff_forward)
+
+        #          from i to j                   from j to i
+        forward = -np.exp(-const*diff_forward) + np.exp(const*diff_forward)
         backward = -np.roll(forward, 1)
         total = forward+backward
+        """
+        plt.plot(forward)
+        plt.plot(backward)
+        plt.show()
+        plt.plot(total)
+
+        print(sum(total))
+        plt.show()
+        """
         self.y_history.append(self.y.copy())
         self.y += const*total
         #node_energy_x = 1.55/(1.0+np.exp((l_slopes_x)*51+1.7))
@@ -125,25 +143,31 @@ class diff_model:
 
 
 rand = 0.05
-m = diff_model(nodes=100, sample_len=100,diff=0.1)
-m.add_spike(30)
+m = diff_model(nodes=200, sample_len=100,diff=0.1)
+#m.add_spike(10)
+#m.add_cos(3,3)
 m.show()
 
 
+erosion_amp = 0.2
+erosion_sigma = 1
+t = True
+
+relax_cycle = int(input("Relax:"))
+if relax_cycle == 0:
+    relax_cycle = 1
+    m.diff = 0.0
+
 cont = int(input("Cont:"))
-erosion = 0.1
 while cont:
-    #m.erosion_gauss(erosion, 3)
     cont -= 1
-    for i in range(20):
+
+    m.erosion_gauss(erosion_amp, erosion_sigma)
+
+    for i in range(relax_cycle):
         m.single_energy()
 
     if(cont == 0):
+        print("diff: {} erosion: {}\nSTD:{}".format(relax_cycle, erosion_amp, np.std(m.y)))
         m.show()
         cont = int(input("Cont:"))
-        erosion = 0.0
-
-
-    #m.single_normal()
-    #m.single_normal4()
-    #m.single_normal()
